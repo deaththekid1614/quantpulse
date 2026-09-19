@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Data (never commit DB / raw dumps)
+data/*.db
+data/*.sqlite
+data/raw/
+!data/.gitkeep
+
+# ML artifacts — track metadata, not weights
+backend/models_artifacts/*
+!backend/models_artifacts/.gitkeep
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
