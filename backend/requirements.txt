@@ -1,3 +1,20 @@
-fastapi>=0.110,<0.116
-uvicorn[standard]>=0.27,<0.31
+# Quantpulse backend dependencies — Stage 1
+# Python 3.12. Installed via:  make setup-backend  (uv pip install)
+
+# --- Web framework ---
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+
+# --- Config & validation ---
 python-dotenv>=1.0,<2
+pydantic>=2.9,<3
+pydantic-settings>=2.6,<3
+
+# --- Database ---
+SQLAlchemy>=2.0,<3
+
+# --- Data / markets ---
+pandas>=2.2,<3
+numpy>=1.26,<3
+yfinance>=0.2.50,<1
+requests>=2.32,<3
