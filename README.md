@@ -35,3 +35,4 @@ Open http://localhost:5173 — you should see "Quantpulse" and
 ## Stages
 
 See `docs/` for per-stage handoff documents.
+# quantpulse
