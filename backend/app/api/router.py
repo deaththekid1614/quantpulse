@@ -1,7 +1,11 @@
 """Aggregates all API sub-routers under /api."""
 from fastapi import APIRouter
 
-from app.api.routes import health
+from app.api.routes import features, health, prices, securities, snapshot
 
 api_router = APIRouter()
-api_router.include_router(health.router, tags=["health"])
+api_router.include_router(health.router,     tags=["health"])
+api_router.include_router(securities.router, tags=["securities"])
+api_router.include_router(prices.router,     tags=["prices"])
+api_router.include_router(features.router,   tags=["features"])
+api_router.include_router(snapshot.router,   tags=["snapshot"])
