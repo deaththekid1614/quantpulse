@@ -9,6 +9,7 @@ from app.api.routes import (
     prices,
     securities,
     snapshot,
+    stats,
 )
 
 api_router = APIRouter()
@@ -19,3 +20,4 @@ api_router.include_router(features.router,   tags=["features"])
 api_router.include_router(snapshot.router,   tags=["snapshot"])
 api_router.include_router(indices.router,    tags=["indices"])
 api_router.include_router(movers.router,     tags=["movers"])
+api_router.include_router(stats.router,      tags=["stats"])

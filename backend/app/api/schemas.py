@@ -150,6 +150,46 @@ class MoversOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# stats  (Stage 5)
+# ---------------------------------------------------------------------------
+
+class StatsOut(BaseModel):
+    """
+    Rolling statistics for one security.
+
+    Returns are expressed in percent. `pct_from_52w_high` is <= 0
+    (the stock is at or below its 52-week high). `pct_from_52w_low` is
+    >= 0. Null returns mean the required history wasn't available.
+    """
+    ticker: str
+    symbol: str
+    name:   str
+    sector: str
+    as_of:  date
+
+    # 52-week range
+    high_52w:           float
+    low_52w:            float
+    pct_from_52w_high:  float
+    pct_from_52w_low:   float
+
+    # returns, percent
+    ret_1d_pct:  float | None
+    ret_5d_pct:  float | None
+    ret_20d_pct: float | None
+    ret_ytd_pct: float | None
+    ret_1y_pct:  float | None
+
+    # average volumes
+    avg_volume_20d: int
+    avg_volume_60d: int
+
+    # all-time within available history
+    all_time_high: float
+    all_time_low:  float
+
+
+# ---------------------------------------------------------------------------
 # errors
 # ---------------------------------------------------------------------------
 

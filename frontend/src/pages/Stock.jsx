@@ -1,6 +1,11 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { useSnapshot } from "../api/hooks.js";
+import PriceChart from "../charts/PriceChart.jsx";
+import TimeframeTabs from "../components/TimeframeTabs.jsx";
+import PerformanceNarrative from "../components/PerformanceNarrative.jsx";
+import StatsGrid from "../components/StatsGrid.jsx";
 
 function fmtPrice(n) {
   return n.toLocaleString("en-IN", {
@@ -35,19 +40,24 @@ function BackLink() {
   );
 }
 
-function BigStat({ label, value, tone = "neutral" }) {
-  const cls =
-    tone === "up"
-      ? "text-accent-up"
-      : tone === "down"
-        ? "text-accent-down"
-        : "text-ink-200";
+function SectionTitle({ children, right }) {
+  return (
+    <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+      <h2 className="text-xs font-mono tracking-wider text-ink-400 uppercase">
+        {children}
+      </h2>
+      {right}
+    </div>
+  );
+}
+
+function BigStat({ label, value }) {
   return (
     <div>
       <div className="text-xs font-mono text-ink-500 tracking-wider">
         {label}
       </div>
-      <div className={`mt-0.5 text-sm tabular-nums ${cls}`}>{value}</div>
+      <div className="mt-0.5 text-sm tabular-nums text-ink-200">{value}</div>
     </div>
   );
 }
@@ -55,6 +65,7 @@ function BigStat({ label, value, tone = "neutral" }) {
 export default function Stock() {
   const { ticker } = useParams();
   const { data, isLoading, error } = useSnapshot(ticker);
+  const [range, setRange] = useState("1y");
 
   if (isLoading) {
     return (
@@ -62,6 +73,7 @@ export default function Stock() {
         <BackLink />
         <div className="h-8 w-40 bg-ink-800 rounded animate-pulse" />
         <div className="h-14 w-64 bg-ink-800 rounded animate-pulse" />
+        <div className="h-[380px] bg-ink-800 rounded animate-pulse" />
         <div className="h-24 bg-ink-800 rounded animate-pulse" />
       </div>
     );
@@ -89,16 +101,14 @@ export default function Stock() {
   const { symbol, name, sector, as_of, price, change_1d, change_1d_pct } = data;
   const isUp = (change_1d_pct ?? 0) > 0;
   const isDown = (change_1d_pct ?? 0) < 0;
-  const changeTone = isUp ? "up" : isDown ? "down" : "neutral";
-  const changeColor =
-    changeTone === "up"
-      ? "text-accent-up"
-      : changeTone === "down"
-        ? "text-accent-down"
-        : "text-ink-400";
+  const changeColor = isUp
+    ? "text-accent-up"
+    : isDown
+      ? "text-accent-down"
+      : "text-ink-400";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <BackLink />
 
       {/* Header */}
@@ -126,28 +136,56 @@ export default function Stock() {
         </div>
       </div>
 
-      {/* Session OHLC row */}
-      <div className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-4">
-        <div className="text-xs font-mono text-ink-500 tracking-wider mb-3">
-          TODAY'S SESSION
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-          <BigStat label="OPEN" value={`₹${fmtPrice(price.open)}`} />
-          <BigStat label="HIGH" value={`₹${fmtPrice(price.high)}`} />
-          <BigStat label="LOW" value={`₹${fmtPrice(price.low)}`} />
-          <BigStat label="CLOSE" value={`₹${fmtPrice(price.close)}`} />
-          <BigStat label="VOLUME" value={fmtVolume(price.volume)} />
-        </div>
-      </div>
+      {/* Chart with timeframe switcher */}
+      <section>
+        <SectionTitle right={<TimeframeTabs value={range} onChange={setRange} />}>
+          Price history
+        </SectionTitle>
+        <PriceChart ticker={ticker} range={range} />
+      </section>
 
-      {/* Placeholder for Stage 5 */}
-      <div className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-6">
-        <div className="text-sm text-ink-400">
-          The 5-year interactive chart, performance narrative, risk analysis,
-          and forecast panels arrive in <span className="text-ink-200">Stage 5</span>{" "}
-          onward.
+      {/* Performance narrative */}
+      <section>
+        <SectionTitle>How is {symbol} doing?</SectionTitle>
+        <PerformanceNarrative ticker={ticker} symbol={symbol} />
+      </section>
+
+      {/* Stats grid */}
+      <section>
+        <SectionTitle>Statistics</SectionTitle>
+        <StatsGrid ticker={ticker} />
+      </section>
+
+      {/* Today's OHLC */}
+      <section>
+        <SectionTitle>Today's session</SectionTitle>
+        <div className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <BigStat label="OPEN" value={`₹${fmtPrice(price.open)}`} />
+            <BigStat label="HIGH" value={`₹${fmtPrice(price.high)}`} />
+            <BigStat label="LOW" value={`₹${fmtPrice(price.low)}`} />
+            <BigStat label="CLOSE" value={`₹${fmtPrice(price.close)}`} />
+            <BigStat label="VOLUME" value={fmtVolume(price.volume)} />
+          </div>
         </div>
-      </div>
+      </section>
+
+      {/* Placeholders for later stages */}
+      <section className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-5">
+        <div className="text-sm text-ink-400 leading-relaxed">
+          <div className="mb-2">
+            <span className="text-ink-200">Coming next</span> — this page
+            grows over the following stages:
+          </div>
+          <ul className="space-y-1 text-ink-500">
+            <li>· Company fundamentals &amp; profile — Stage 6</li>
+            <li>· News feed &amp; sentiment — Stage 7</li>
+            <li>· 7/15/30-day probabilistic forecasts — Stage 8</li>
+            <li>· Risk assessment &amp; stress detection — Stage 9</li>
+            <li>· Full plain-English analysis — Stage 10</li>
+          </ul>
+        </div>
+      </section>
     </div>
   );
 }

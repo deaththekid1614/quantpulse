@@ -52,11 +52,13 @@ export const getPrices = (ticker, range = "1y") =>
 export const getFeatures = (ticker, range = "1y") =>
   apiFetch(`/api/securities/${enc(ticker)}/features?range=${enc(range)}`);
 
-// --- snapshot ---
+// --- snapshot & stats ---
 export const getSnapshot = (ticker) =>
   apiFetch(`/api/securities/${enc(ticker)}/snapshot`);
+
+export const getStats = (ticker) =>
+  apiFetch(`/api/securities/${enc(ticker)}/stats`);
 
 // --- market ---
 export const getIndicesSnapshot = () => apiFetch("/api/indices/snapshot");
 export const getMovers = (limit = 10) => apiFetch(`/api/movers?limit=${limit}`);
-

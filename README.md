@@ -10,15 +10,16 @@ publishes per-ticker pages containing a 5-year interactive chart, a
 plain-English performance narrative, a risk assessment, news sentiment,
 and probabilistic 7/15/30-day forecasts with explanations.
 
-One analysis per session. Many users. No fake precision.
+> One analysis per session. Many users. No fake precision. 🎯
 
-**Status:** Stage 4 complete — home page, live search, and a
-snapshot-driven stock page render against the live API. No ML, no news,
-no charts yet.
+**Status:** Stage 5 complete — the stock page is now a real research
+surface: interactive candlestick chart, six timeframes, a rule-based
+performance narrative, and a statistics grid. No ML, no news, no
+forecasts yet.
 
 ---
 
-## Design principles
+## 🧭 Design principles
 
 1. **Batch, not streaming.** The heavy pipeline runs once per day after
    market close. The API reads precomputed rows from SQLite. No user
@@ -38,7 +39,7 @@ no charts yet.
 
 ---
 
-## Tech stack
+## 🧱 Tech stack
 
 | Layer | Choice |
 |---|---|
@@ -49,11 +50,11 @@ no charts yet.
 | ML (later) | scikit-learn, PyTorch (Colab training), ONNX Runtime (local inference) |
 | NLP (later) | VADER → FinBERT-ONNX |
 | Frontend | React 18 + Vite 5 + TailwindCSS 3 + React Router 6 + React Query 5 |
-| Charts (later) | lightweight-charts |
+| Charts | lightweight-charts 4 |
 
 ---
 
-## Layout
+## 📁 Layout
 
 ```
 quantpulse/
@@ -74,8 +75,9 @@ quantpulse/
 ├── frontend/               React + Vite + Tailwind
 │   └── src/
 │       ├── api/            backend client + React Query hooks
-│       ├── components/     Layout, Search, MarketStrip, TopMovers
-│       ├── charts/         (reserved — Stage 5+)
+│       ├── components/     Layout, Search, MarketStrip, TopMovers,
+│       │                   TimeframeTabs, PerformanceNarrative, StatsGrid
+│       ├── charts/         PriceChart (candlestick)
 │       ├── pages/          Home, Stock
 │       └── styles/         Tailwind entry
 ├── data/
@@ -86,7 +88,7 @@ quantpulse/
 
 ---
 
-## Requirements
+## ⚙️ Requirements
 
 - **Python 3.12** via [`uv`](https://docs.astral.sh/uv/)
 - **Node 20+** and npm
@@ -97,7 +99,7 @@ System Python is not touched. `uv` installs its own Python into
 
 ---
 
-## First-time setup
+## 🚀 First-time setup
 
 ```bash
 # 1. install uv (one-time, no sudo)
@@ -122,7 +124,7 @@ make setup
 
 ---
 
-## Running the app
+## ▶️ Running the app
 
 Two terminals.
 
@@ -145,11 +147,11 @@ indices strip, top movers, and a market-summary placeholder. The search
 box in the top bar autocompletes over the 50 securities; pressing Enter
 navigates to `/stock/:ticker`.
 
-API docs (Swagger UI): <http://127.0.0.1:8000/docs>
+📖 API docs (Swagger UI): <http://127.0.0.1:8000/docs>
 
 ---
 
-## Data pipeline
+## 🧮 Data pipeline
 
 Three idempotent scripts populate the database. Run in this order on a
 fresh clone.
@@ -186,7 +188,7 @@ context. Warm-up rows are dropped; only fully-populated rows are stored.
 Every run is logged to `ingest_log`. Re-running is safe and never
 duplicates rows.
 
-### Current database state
+### 📊 Current database state
 
 ```
 securities         :  50
@@ -197,9 +199,9 @@ features_daily     :  51,939 rows   (2022-07-05 → 2026-09-18)
 
 ---
 
-## API
+## 🌐 API
 
-Seven endpoints under `/api`. All responses are JSON. Full interactive
+Eight endpoints under `/api`. All responses are JSON. Full interactive
 reference at <http://127.0.0.1:8000/docs>.
 
 | Method | Path | Description |
@@ -210,6 +212,7 @@ reference at <http://127.0.0.1:8000/docs>.
 | GET | `/api/securities/{ticker}/prices?range=1y` | Daily OHLCV history |
 | GET | `/api/securities/{ticker}/features?range=1y` | Daily feature vector |
 | GET | `/api/securities/{ticker}/snapshot` | Latest price + change + features |
+| GET | `/api/securities/{ticker}/stats` | 52w range, returns, volumes, ATH/ATL |
 | GET | `/api/indices/snapshot` | Latest bar + change for the three indices |
 | GET | `/api/movers?limit=10` | Top movers by absolute 1-day % change |
 
@@ -224,7 +227,7 @@ endpoint return in < 5 ms.
 
 ---
 
-## Frontend
+## 🖥️ Frontend
 
 React 18 + Vite 5, styled with Tailwind. Data fetching via React Query
 with a 60-second `staleTime` matching the backend cache TTL. Routing via
@@ -232,18 +235,40 @@ React Router 6.
 
 **Pages:**
 
-- `/` — Market overview: indices strip, top movers, market summary
+- `/` — **Market overview**: indices strip, top movers, market summary
   placeholder.
-- `/stock/:ticker` — Snapshot-driven header (price, change, OHLC row).
-  Chart, narrative, and forecast panels arrive in Stage 5+.
+- `/stock/:ticker` — **Stock page** (see below).
+
+**Stock page sections, top to bottom:**
+
+1. Header — symbol, name, sector, NSE, last session date
+2. Price block — current close + day change
+3. **Price history** — interactive candlestick chart with a
+   `3M / 6M / 1Y / 3Y / 5Y / MAX` timeframe switcher
+4. **How is {symbol} doing?** — plain-English performance narrative
+   (rule-based, deterministic)
+5. **Statistics** — 9-cell grid: 52-week range, distances from 52w
+   high/low, 1d / 20d / YTD / 1y returns, average volume, all-time
+   range
+6. **Today's session** — OHLC + volume
+7. **Coming next** — placeholder listing Stages 6–10
 
 **Search** in the top bar autocompletes over the full security list
 (client-side, since only 50 rows). Keyboard-navigable: ↑ / ↓ to move,
 Enter to open, Esc to close.
 
+📈 **Chart** — dark-themed candlestick via `lightweight-charts` 4.2.
+Crosshair, pan, and zoom work out of the box. Auto-resizes to its
+container.
+
+📝 **Narrative** — reads five features from `/snapshot`
+(`px_over_sma_50`, `px_over_sma_200`, `rsi_14`, `ret_20d`, `vol_20d`) and
+produces three sentences: trend, momentum + monthly performance,
+volatility band. No LLM. Same inputs → same output.
+
 ---
 
-## Feature catalogue
+## 🧬 Feature catalogue
 
 24 columns per row in `features_daily`, grouped:
 
@@ -267,7 +292,7 @@ is a Stage 8 modelling concern, not a Stage 2 feature concern.
 
 ---
 
-## Common commands
+## 🧰 Common commands
 
 ```bash
 make help             list all targets
@@ -281,7 +306,7 @@ make clean            remove .venv, node_modules, caches
 
 ---
 
-## Project stages
+## 🗺️ Project stages
 
 The build is split into 13 stages. Each stage produces a handoff document
 under `docs/` and freezes its files before the next stage begins.
@@ -293,8 +318,8 @@ under `docs/` and freezes its files before the next stage begins.
 | 02 | Feature Engine | ✅ complete |
 | 03 | Backend API Core | ✅ complete |
 | 04 | Frontend Foundation + Home + Search | ✅ complete |
-| 05 | Stock Page Core + 5-Year Chart | ⏳ next |
-| 06 | Fundamentals + Company Info | pending |
+| 05 | Stock Page Core + 5-Year Chart | ✅ complete |
+| 06 | Fundamentals + Company Info | ⏳ next |
 | 07 | News Pipeline + NLP | pending |
 | 08 | Forecasting Engine | pending |
 | 09 | Risk Engine + Stress Detection | pending |
@@ -307,7 +332,7 @@ See `docs/architecture_handoff.md` for the full architecture and
 
 ---
 
-## Data provider notes
+## 📡 Data provider notes
 
 Yahoo Finance is used through `yfinance` for historical OHLCV. It is a
 free historical-data source, not a guaranteed production API. All access
@@ -319,6 +344,6 @@ correct choice for any historical modelling.
 
 ---
 
-## License
+## 📜 License
 
 Personal project. Not licensed for redistribution yet.
