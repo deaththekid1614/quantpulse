@@ -12,8 +12,8 @@ and probabilistic 7/15/30-day forecasts with explanations.
 
 One analysis per session. Many users. No fake precision.
 
-**Status:** Stage 2 complete — data pipeline, index ingestion, and the
-feature engine are populated. No ML, no news, no real UI yet.
+**Status:** Stage 3 complete — read-only API live at `/api`. No ML, no
+news, no real UI yet.
 
 ---
 
@@ -58,7 +58,7 @@ feature engine are populated. No ML, no news, no real UI yet.
 quantpulse/
 ├── backend/                FastAPI service + pipeline + ML + NLP
 │   ├── app/
-│   │   ├── api/            HTTP routes
+│   │   ├── api/            HTTP routes + schemas + cache
 │   │   ├── core/           config, logging
 │   │   ├── db/             SQLAlchemy engine, session, models
 │   │   ├── providers/      external data interfaces + implementations
@@ -194,6 +194,30 @@ features_daily     :  51,939 rows   (2022-07-05 → 2026-09-18)
 
 ---
 
+## API
+
+Five endpoints under `/api`. All responses are JSON. Full interactive
+reference at <http://127.0.0.1:8000/docs>.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/health` | Liveness check |
+| GET | `/api/securities` | List all 50 tracked securities |
+| GET | `/api/securities/{ticker}` | Metadata for one security |
+| GET | `/api/securities/{ticker}/prices?range=1y` | Daily OHLCV history |
+| GET | `/api/securities/{ticker}/features?range=1y` | Daily feature vector |
+| GET | `/api/securities/{ticker}/snapshot` | Latest price + change + features |
+
+`range` accepts `1w`, `1m`, `3m`, `6m`, `1y`, `3y`, `5y`, `max`.
+Default is `1y`.
+
+Errors: `404` for unknown ticker, `400` for invalid range.
+
+Responses are cached in-memory for 60 seconds. Second reads of any
+endpoint return in < 5 ms.
+
+---
+
 ## Feature catalogue
 
 24 columns per row in `features_daily`, grouped:
@@ -242,8 +266,8 @@ under `docs/` and freezes its files before the next stage begins.
 | 00 | Foundations | ✅ complete |
 | 01 | Data Provider Layer + Stock Universe | ✅ complete |
 | 02 | Feature Engine | ✅ complete |
-| 03 | Backend API Core | ⏳ next |
-| 04 | Frontend Foundation + Home + Search | pending |
+| 03 | Backend API Core | ✅ complete |
+| 04 | Frontend Foundation + Home + Search | ⏳ next |
 | 05 | Stock Page Core + 5-Year Chart | pending |
 | 06 | Fundamentals + Company Info | pending |
 | 07 | News Pipeline + NLP | pending |
