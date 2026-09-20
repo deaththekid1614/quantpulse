@@ -39,7 +39,6 @@ class SecurityListOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PriceBar(BaseModel):
-    """One daily OHLCV bar."""
     date:   date
     open:   float
     high:   float
@@ -63,7 +62,6 @@ class PriceHistoryOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 class FeatureRow(BaseModel):
-    """One day's feature vector. Keys mirror FEATURE_COLUMNS from features.py."""
     date:     date
     features: dict[str, float]
 
@@ -92,12 +90,6 @@ class LatestPrice(BaseModel):
 
 
 class SnapshotOut(BaseModel):
-    """
-    Everything the frontend needs to render the top of the stock page.
-
-    `change_1d` and `change_1d_pct` are None if the security has fewer
-    than two price rows in the DB (not expected, but defensive).
-    """
     ticker:          str
     symbol:          str
     name:            str
@@ -110,11 +102,10 @@ class SnapshotOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# indices  (Stage 4)
+# indices
 # ---------------------------------------------------------------------------
 
 class IndexQuote(BaseModel):
-    """Latest bar and change for one market index."""
     symbol:         str
     name:           str
     as_of:          date
@@ -129,11 +120,10 @@ class IndexSnapshotOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# movers  (Stage 4)
+# movers
 # ---------------------------------------------------------------------------
 
 class MoverOut(BaseModel):
-    """One security in the top-movers list."""
     ticker:        str
     symbol:        str
     name:          str
@@ -150,43 +140,103 @@ class MoversOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# stats  (Stage 5)
+# stats
 # ---------------------------------------------------------------------------
 
 class StatsOut(BaseModel):
-    """
-    Rolling statistics for one security.
-
-    Returns are expressed in percent. `pct_from_52w_high` is <= 0
-    (the stock is at or below its 52-week high). `pct_from_52w_low` is
-    >= 0. Null returns mean the required history wasn't available.
-    """
     ticker: str
     symbol: str
     name:   str
     sector: str
     as_of:  date
 
-    # 52-week range
     high_52w:           float
     low_52w:            float
     pct_from_52w_high:  float
     pct_from_52w_low:   float
 
-    # returns, percent
     ret_1d_pct:  float | None
     ret_5d_pct:  float | None
     ret_20d_pct: float | None
     ret_ytd_pct: float | None
     ret_1y_pct:  float | None
 
-    # average volumes
     avg_volume_20d: int
     avg_volume_60d: int
 
-    # all-time within available history
     all_time_high: float
     all_time_low:  float
+
+
+# ---------------------------------------------------------------------------
+# fundamentals  (Stage 6)
+# ---------------------------------------------------------------------------
+
+class FundamentalsOut(BaseModel):
+    """
+    Company fundamentals. Every metric is nullable — NSE-listed equities
+    genuinely vary in what Yahoo reports. Consumers must render missing
+    values as an em-dash or similar, never as a fabricated zero.
+
+    Units:
+      profit_margin, return_on_equity, return_on_assets, payout_ratio
+        are fractions (0.18 = 18%).
+      dividend_yield is a percent (3.09 = 3.09%).
+      debt_to_equity is Yahoo's raw value, typically a percent for NSE.
+      All currency fields are INR.
+    """
+    ticker: str
+    symbol: str
+    name:   str
+    sector: str                              # our sector (from universe.json)
+    as_of:  date | None = Field(None, description="Date the metrics were captured")
+
+    # --- market data ---
+    current_price:      float | None = None
+    previous_close:     float | None = None
+    market_cap:         float | None = None
+    enterprise_value:   float | None = None
+    high_52w:           float | None = None
+    low_52w:            float | None = None
+    shares_outstanding: float | None = None
+
+    # --- valuation ---
+    pe_trailing:    float | None = None
+    price_to_book:  float | None = None
+    price_to_sales: float | None = None
+
+    # --- earnings ---
+    eps_trailing: float | None = None
+
+    # --- revenue / profit ---
+    total_revenue:    float | None = None
+    gross_profits:    float | None = None
+    net_income:       float | None = None
+    profit_margin:    float | None = None
+    return_on_equity: float | None = None
+    return_on_assets: float | None = None
+
+    # --- balance sheet ---
+    total_debt:     float | None = None
+    total_cash:     float | None = None
+    debt_to_equity: float | None = None
+
+    # --- dividends ---
+    dividend_rate:  float | None = None
+    dividend_yield: float | None = None
+    payout_ratio:   float | None = None
+
+    # --- profile ---
+    yf_sector:   str | None = None       # Yahoo's coarse sector, distinct from ours
+    industry:    str | None = None
+    employees:   int | None = None
+    city:        str | None = None
+    country:     str | None = None
+    website:     str | None = None
+    description: str | None = None
+
+    # --- reference ---
+    beta_yf: float | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,8 @@ import PriceChart from "../charts/PriceChart.jsx";
 import TimeframeTabs from "../components/TimeframeTabs.jsx";
 import PerformanceNarrative from "../components/PerformanceNarrative.jsx";
 import StatsGrid from "../components/StatsGrid.jsx";
+import CompanySnapshot from "../components/CompanySnapshot.jsx";
+import CompanyProfile from "../components/CompanyProfile.jsx";
 
 function fmtPrice(n) {
   return n.toLocaleString("en-IN", {
@@ -136,7 +138,7 @@ export default function Stock() {
         </div>
       </div>
 
-      {/* Chart with timeframe switcher */}
+      {/* Chart */}
       <section>
         <SectionTitle right={<TimeframeTabs value={range} onChange={setRange} />}>
           Price history
@@ -144,16 +146,28 @@ export default function Stock() {
         <PriceChart ticker={ticker} range={range} />
       </section>
 
-      {/* Performance narrative */}
+      {/* Narrative */}
       <section>
         <SectionTitle>How is {symbol} doing?</SectionTitle>
         <PerformanceNarrative ticker={ticker} symbol={symbol} />
       </section>
 
-      {/* Stats grid */}
+      {/* Statistics */}
       <section>
         <SectionTitle>Statistics</SectionTitle>
         <StatsGrid ticker={ticker} />
+      </section>
+
+      {/* Fundamentals */}
+      <section>
+        <SectionTitle>Company snapshot</SectionTitle>
+        <CompanySnapshot ticker={ticker} />
+      </section>
+
+      {/* Profile */}
+      <section>
+        <SectionTitle>About {symbol}</SectionTitle>
+        <CompanyProfile ticker={ticker} />
       </section>
 
       {/* Today's OHLC */}
@@ -170,15 +184,14 @@ export default function Stock() {
         </div>
       </section>
 
-      {/* Placeholders for later stages */}
+      {/* Placeholders */}
       <section className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-5">
         <div className="text-sm text-ink-400 leading-relaxed">
           <div className="mb-2">
             <span className="text-ink-200">Coming next</span> — this page
-            grows over the following stages:
+            continues to grow:
           </div>
           <ul className="space-y-1 text-ink-500">
-            <li>· Company fundamentals &amp; profile — Stage 6</li>
             <li>· News feed &amp; sentiment — Stage 7</li>
             <li>· 7/15/30-day probabilistic forecasts — Stage 8</li>
             <li>· Risk assessment &amp; stress detection — Stage 9</li>

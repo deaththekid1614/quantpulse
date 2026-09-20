@@ -1,13 +1,17 @@
 """
-Yahoo Finance implementation of MarketDataProvider.
+Yahoo Finance implementation of the provider interfaces.
 
-Uses yfinance. This is a historical-data provider — not a live tick feed.
-Yahoo occasionally rate-limits or changes its endpoints; when that happens,
-only this file changes, not the rest of the codebase.
+Uses yfinance for historical OHLCV and company fundamentals.
+
+This is a historical and slow-moving-data provider. It is not a live tick
+feed and not an authoritative fundamentals source — Yahoo occasionally
+rate-limits, changes endpoints, or returns partial data. When that
+happens, only this file changes, not the rest of the codebase.
 """
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -16,6 +20,7 @@ import yfinance as yf
 from app.providers.base import (
     OHLCV_COLUMNS,
     OHLCV_INDEX_NAME,
+    Fundamentals,
     MarketDataProvider,
     ProviderError,
     ProviderUnavailable,
@@ -25,6 +30,10 @@ from app.providers.base import (
 log = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
 def _empty_ohlcv() -> pd.DataFrame:
     """Return an empty DataFrame with the exact canonical schema."""
     df = pd.DataFrame({c: pd.Series(dtype="float64") for c in OHLCV_COLUMNS})
@@ -33,13 +42,50 @@ def _empty_ohlcv() -> pd.DataFrame:
     return df
 
 
+def _coerce_float(v) -> float | None:
+    """Return v as a finite float, or None if missing / not numeric / non-finite."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f):
+        return None
+    return f
+
+
+def _coerce_int(v) -> int | None:
+    f = _coerce_float(v)
+    if f is None:
+        return None
+    return int(f)
+
+
+def _coerce_str(v) -> str | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s.lower() in ("none", "null", "n/a", "nan"):
+        return None
+    return s
+
+
+# ---------------------------------------------------------------------------
+# provider
+# ---------------------------------------------------------------------------
+
 class YahooMarketDataProvider(MarketDataProvider):
-    """yfinance-backed historical OHLCV provider."""
+    """yfinance-backed historical OHLCV and fundamentals provider."""
 
     def __init__(self, auto_adjust: bool = True) -> None:
         # auto_adjust=True means prices are adjusted for splits/dividends.
         # This is the correct choice for any historical modelling.
         self._auto_adjust = auto_adjust
+
+    # ------------------------------------------------------------------
+    # MarketDataProvider
+    # ------------------------------------------------------------------
 
     def get_daily_ohlcv(
         self,
@@ -77,7 +123,76 @@ class YahooMarketDataProvider(MarketDataProvider):
         return df
 
     # ------------------------------------------------------------------
-    # internals
+    # FundamentalsProvider
+    # ------------------------------------------------------------------
+
+    def get_fundamentals(self, ticker: str) -> Fundamentals:
+        """
+        Fetch company fundamentals via yfinance `.info`.
+
+        Never raises on missing fields — returns a Fundamentals with
+        None for anything the provider didn't supply. Raises only on
+        network / provider failure so the caller can distinguish
+        "data genuinely absent" from "the source is down".
+        """
+        try:
+            yt = yf.Ticker(ticker)
+            info = yt.info or {}
+        except Exception as exc:
+            raise ProviderUnavailable(
+                f"yahoo .info failed for {ticker}: {exc}"
+            ) from exc
+
+        if not isinstance(info, dict) or not info:
+            log.warning("yahoo: empty .info for %s", ticker)
+            return Fundamentals(ticker=ticker)
+
+        return Fundamentals(
+            ticker=ticker,
+
+            current_price=_coerce_float(info.get("currentPrice")),
+            previous_close=_coerce_float(info.get("previousClose")),
+            market_cap=_coerce_float(info.get("marketCap")),
+            enterprise_value=_coerce_float(info.get("enterpriseValue")),
+            high_52w=_coerce_float(info.get("fiftyTwoWeekHigh")),
+            low_52w=_coerce_float(info.get("fiftyTwoWeekLow")),
+            shares_outstanding=_coerce_float(info.get("sharesOutstanding")),
+
+            pe_trailing=_coerce_float(info.get("trailingPE")),
+            price_to_book=_coerce_float(info.get("priceToBook")),
+            price_to_sales=_coerce_float(info.get("priceToSalesTrailing12Months")),
+
+            eps_trailing=_coerce_float(info.get("trailingEps")),
+
+            total_revenue=_coerce_float(info.get("totalRevenue")),
+            gross_profits=_coerce_float(info.get("grossProfits")),
+            net_income=_coerce_float(info.get("netIncomeToCommon")),
+            profit_margin=_coerce_float(info.get("profitMargins")),
+            return_on_equity=_coerce_float(info.get("returnOnEquity")),
+            return_on_assets=_coerce_float(info.get("returnOnAssets")),
+
+            total_debt=_coerce_float(info.get("totalDebt")),
+            total_cash=_coerce_float(info.get("totalCash")),
+            debt_to_equity=_coerce_float(info.get("debtToEquity")),
+
+            dividend_rate=_coerce_float(info.get("dividendRate")),
+            dividend_yield=_coerce_float(info.get("dividendYield")),
+            payout_ratio=_coerce_float(info.get("payoutRatio")),
+
+            long_name=_coerce_str(info.get("longName")),
+            yf_sector=_coerce_str(info.get("sector")),
+            industry=_coerce_str(info.get("industry")),
+            employees=_coerce_int(info.get("fullTimeEmployees")),
+            city=_coerce_str(info.get("city")),
+            country=_coerce_str(info.get("country")),
+            website=_coerce_str(info.get("website")),
+            description=_coerce_str(info.get("longBusinessSummary")),
+
+            beta_yf=_coerce_float(info.get("beta")),
+        )
+
+    # ------------------------------------------------------------------
+    # OHLCV internals
     # ------------------------------------------------------------------
 
     @staticmethod

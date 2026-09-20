@@ -12,10 +12,10 @@ and probabilistic 7/15/30-day forecasts with explanations.
 
 > One analysis per session. Many users. No fake precision. 🎯
 
-**Status:** Stage 5 complete — the stock page is now a real research
-surface: interactive candlestick chart, six timeframes, a rule-based
-performance narrative, and a statistics grid. No ML, no news, no
-forecasts yet.
+**Status:** Stage 6 complete — the stock page now includes company
+fundamentals with rule-based interpretation cards and an About section.
+Interactive chart, narrative, and statistics grid are already live.
+No ML, no news, no forecasts yet.
 
 ---
 
@@ -69,14 +69,16 @@ quantpulse/
 │   │   ├── nlp/            (reserved — Stage 7+)
 │   │   ├── explain/        (reserved — Stage 10+)
 │   │   └── scheduler/      (reserved — Stage 11+)
-│   ├── scripts/            CLI entrypoints (ingestion, feature builds)
+│   ├── scripts/            CLI entrypoints (prices, indices,
+│   │                       features, fundamentals, probes)
 │   ├── tests/              pytest suite (Stage 12)
 │   └── requirements.txt
 ├── frontend/               React + Vite + Tailwind
 │   └── src/
 │       ├── api/            backend client + React Query hooks
 │       ├── components/     Layout, Search, MarketStrip, TopMovers,
-│       │                   TimeframeTabs, PerformanceNarrative, StatsGrid
+│       │                   TimeframeTabs, PerformanceNarrative,
+│       │                   StatsGrid, CompanySnapshot, CompanyProfile
 │       ├── charts/         PriceChart (candlestick)
 │       ├── pages/          Home, Stock
 │       └── styles/         Tailwind entry
@@ -153,7 +155,7 @@ navigates to `/stock/:ticker`.
 
 ## 🧮 Data pipeline
 
-Three idempotent scripts populate the database. Run in this order on a
+Four idempotent scripts populate the database. Run in this order on a
 fresh clone.
 
 ### 1. Price history (Nifty 50)
@@ -185,6 +187,19 @@ context. Warm-up rows are dropped; only fully-populated rows are stored.
 .venv/bin/python backend/scripts/build_features.py --universe nifty50
 ```
 
+### 4. Company fundamentals
+
+Fetches market cap, P/E, EPS, revenue, profit, dividends, balance sheet
+items, and company profile from Yahoo Finance. One row per security.
+
+```bash
+# single ticker
+.venv/bin/python backend/scripts/ingest_fundamentals.py --ticker TCS.NS
+
+# full universe (~20 seconds)
+.venv/bin/python backend/scripts/ingest_fundamentals.py --universe nifty50
+```
+
 Every run is logged to `ingest_log`. Re-running is safe and never
 duplicates rows.
 
@@ -195,13 +210,14 @@ securities         :  50
 prices_daily       :  62,138 rows   (2021-09-16 → 2026-09-18)
 market_index_daily :   3,707 rows   (^NSEI, ^NSEBANK, ^INDIAVIX)
 features_daily     :  51,939 rows   (2022-07-05 → 2026-09-18)
+fundamentals       :      50 rows   (one per security)
 ```
 
 ---
 
 ## 🌐 API
 
-Eight endpoints under `/api`. All responses are JSON. Full interactive
+Nine endpoints under `/api`. All responses are JSON. Full interactive
 reference at <http://127.0.0.1:8000/docs>.
 
 | Method | Path | Description |
@@ -213,6 +229,7 @@ reference at <http://127.0.0.1:8000/docs>.
 | GET | `/api/securities/{ticker}/features?range=1y` | Daily feature vector |
 | GET | `/api/securities/{ticker}/snapshot` | Latest price + change + features |
 | GET | `/api/securities/{ticker}/stats` | 52w range, returns, volumes, ATH/ATL |
+| GET | `/api/securities/{ticker}/fundamentals` | Company fundamentals + profile |
 | GET | `/api/indices/snapshot` | Latest bar + change for the three indices |
 | GET | `/api/movers?limit=10` | Top movers by absolute 1-day % change |
 
@@ -250,8 +267,12 @@ React Router 6.
 5. **Statistics** — 9-cell grid: 52-week range, distances from 52w
    high/low, 1d / 20d / YTD / 1y returns, average volume, all-time
    range
-6. **Today's session** — OHLC + volume
-7. **Coming next** — placeholder listing Stages 6–10
+6. **Company snapshot** — 4 interpretation cards (Profitability,
+   Valuation, Balance Sheet, Dividend) + 9-cell metric grid
+7. **About {symbol}** — business description, industry, employees, HQ,
+   website
+8. **Today's session** — OHLC + volume
+9. **Coming next** — placeholder listing Stages 7–10
 
 **Search** in the top bar autocompletes over the full security list
 (client-side, since only 50 rows). Keyboard-navigable: ↑ / ↓ to move,
@@ -265,6 +286,14 @@ container.
 (`px_over_sma_50`, `px_over_sma_200`, `rsi_14`, `ret_20d`, `vol_20d`) and
 produces three sentences: trend, momentum + monthly performance,
 volatility band. No LLM. Same inputs → same output.
+
+🧾 **Fundamentals** — rule-based interpretation for four metric groups.
+Profitability trusts the sign of trailing net income over Yahoo's margin
+field (Yahoo can report positive margin for a loss-making company during
+a corporate action). Financial-sector companies are flagged separately
+for debt/equity because banks are structurally leveraged. Missing values
+render as `—`; nothing is invented. No recommendation language
+("buy", "undervalued", etc.) anywhere in the UI.
 
 ---
 
@@ -289,6 +318,28 @@ volatility band. No LLM. Same inputs → same output.
 **Extremes are kept, not clamped.** `beta_60d` can exceed 5 during
 idiosyncratic events (e.g. Adani Group, March–April 2023). Winsorization
 is a Stage 8 modelling concern, not a Stage 2 feature concern.
+
+---
+
+## 💼 Fundamentals catalogue
+
+36 columns per row in `fundamentals`, grouped:
+
+| Group | Columns |
+|---|---|
+| Market | current_price, previous_close, market_cap, enterprise_value, high_52w, low_52w, shares_outstanding |
+| Valuation | pe_trailing, price_to_book, price_to_sales |
+| Earnings | eps_trailing |
+| Revenue/Profit | total_revenue, gross_profits, net_income, profit_margin, return_on_equity, return_on_assets |
+| Balance sheet | total_debt, total_cash, debt_to_equity |
+| Dividends | dividend_rate, dividend_yield, payout_ratio |
+| Profile | long_name, yf_sector, industry, employees, city, country, website, description |
+| Reference | beta_yf |
+
+**Coverage is uneven.** Yahoo publishes ROE/ROA for only ~28% of NSE-listed
+non-financials, and `debt_to_equity` is missing for ~14%. Everything else
+is at or near 100%. The frontend renders missing values as `—` and picks
+alternate signals when the primary one is absent.
 
 ---
 
@@ -319,8 +370,8 @@ under `docs/` and freezes its files before the next stage begins.
 | 03 | Backend API Core | ✅ complete |
 | 04 | Frontend Foundation + Home + Search | ✅ complete |
 | 05 | Stock Page Core + 5-Year Chart | ✅ complete |
-| 06 | Fundamentals + Company Info | ⏳ next |
-| 07 | News Pipeline + NLP | pending |
+| 06 | Fundamentals + Company Info | ✅ complete |
+| 07 | News Pipeline + NLP | ⏳ next |
 | 08 | Forecasting Engine | pending |
 | 09 | Risk Engine + Stress Detection | pending |
 | 10 | Explanation Engine | pending |
@@ -334,16 +385,17 @@ See `docs/architecture_handoff.md` for the full architecture and
 
 ## 📡 Data provider notes
 
-Yahoo Finance is used through `yfinance` for historical OHLCV. It is a
-free historical-data source, not a guaranteed production API. All access
-goes through `backend/app/providers/base.py` abstractions, so a source
-swap touches one file.
+Yahoo Finance is used through `yfinance` for historical OHLCV and
+fundamentals. It is a free data source, not a guaranteed production API.
+All access goes through `backend/app/providers/base.py` abstractions, so
+a source swap touches one file.
 
 Prices are split- and dividend-adjusted (`auto_adjust=True`). This is the
 correct choice for any historical modelling.
 
+Fundamentals are a snapshot, refreshed on each ingest run. The `probe_fundamentals.py`
+script exists so we can re-audit field coverage if Yahoo changes its
+schema.
+
 ---
 
-## 📜 License
-
-Personal project. Not licensed for redistribution yet.

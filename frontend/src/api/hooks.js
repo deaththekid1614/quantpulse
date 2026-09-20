@@ -17,6 +17,8 @@ export const queryKeys = {
   prices: (ticker, range) => ["prices", ticker, range],
   features: (ticker, range) => ["features", ticker, range],
   snapshot: (ticker) => ["snapshot", ticker],
+  stats: (ticker) => ["stats", ticker],
+  fundamentals: (ticker) => ["fundamentals", ticker],
   indicesSnapshot: () => ["indices", "snapshot"],
   movers: (limit) => ["movers", limit],
 };
@@ -75,6 +77,24 @@ export function useSnapshot(ticker) {
   });
 }
 
+export function useStats(ticker) {
+  return useQuery({
+    queryKey: queryKeys.stats(ticker),
+    queryFn: () => client.getStats(ticker),
+    enabled: Boolean(ticker),
+    staleTime: STALE_MS,
+  });
+}
+
+export function useFundamentals(ticker) {
+  return useQuery({
+    queryKey: queryKeys.fundamentals(ticker),
+    queryFn: () => client.getFundamentals(ticker),
+    enabled: Boolean(ticker),
+    staleTime: STALE_MS,
+  });
+}
+
 export function useIndicesSnapshot() {
   return useQuery({
     queryKey: queryKeys.indicesSnapshot(),
@@ -90,4 +110,3 @@ export function useMovers(limit = 10) {
     staleTime: STALE_MS,
   });
 }
-

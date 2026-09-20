@@ -52,12 +52,15 @@ export const getPrices = (ticker, range = "1y") =>
 export const getFeatures = (ticker, range = "1y") =>
   apiFetch(`/api/securities/${enc(ticker)}/features?range=${enc(range)}`);
 
-// --- snapshot & stats ---
+// --- snapshot, stats, fundamentals ---
 export const getSnapshot = (ticker) =>
   apiFetch(`/api/securities/${enc(ticker)}/snapshot`);
 
 export const getStats = (ticker) =>
   apiFetch(`/api/securities/${enc(ticker)}/stats`);
+
+export const getFundamentals = (ticker) =>
+  apiFetch(`/api/securities/${enc(ticker)}/fundamentals`);
 
 // --- market ---
 export const getIndicesSnapshot = () => apiFetch("/api/indices/snapshot");

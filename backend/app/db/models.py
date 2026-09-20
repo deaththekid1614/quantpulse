@@ -2,9 +2,11 @@
 ORM models.
 
 Stage 1 defined the storage layer for prices.
-Stage 2 adds:
+Stage 2 added:
   - market_index_daily  (Nifty 50, Bank Nifty, India VIX)
   - features_daily      (computed features for every security per day)
+Stage 6 adds:
+  - fundamentals        (company fundamentals, one row per security)
 
 Future stages append new tables to this file — never rewrite existing ones.
 """
@@ -108,9 +110,6 @@ class IngestLog(Base):
 # ---------------------------------------------------------------------------
 # market_index_daily  (Stage 2)
 # ---------------------------------------------------------------------------
-# Same shape as prices_daily, but keyed by index symbol instead of a
-# security FK. Indices are not tradeable securities and do not belong in
-# `universe.json`. Symbols used: ^NSEI, ^NSEBANK, ^INDIAVIX.
 
 class MarketIndexDaily(Base):
     __tablename__ = "market_index_daily"
@@ -135,9 +134,6 @@ class MarketIndexDaily(Base):
 # ---------------------------------------------------------------------------
 # features_daily  (Stage 2)
 # ---------------------------------------------------------------------------
-# One row per (security, date). Every feature column is NOT NULL — the
-# build script drops warm-up rows before writing, so anything that lands
-# in the table has a full set of features.
 
 class FeaturesDaily(Base):
     __tablename__ = "features_daily"
@@ -158,17 +154,17 @@ class FeaturesDaily(Base):
     ret_20d: Mapped[float] = mapped_column(Float, nullable=False)
 
     # --- volatility ---
-    vol_20d: Mapped[float] = mapped_column(Float, nullable=False)   # rolling std of ret_1d
-    atr_14d: Mapped[float] = mapped_column(Float, nullable=False)   # average true range
+    vol_20d: Mapped[float] = mapped_column(Float, nullable=False)
+    atr_14d: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- moving averages (levels) ---
+    # --- moving averages ---
     sma_20:  Mapped[float] = mapped_column(Float, nullable=False)
     sma_50:  Mapped[float] = mapped_column(Float, nullable=False)
     sma_200: Mapped[float] = mapped_column(Float, nullable=False)
     ema_12:  Mapped[float] = mapped_column(Float, nullable=False)
     ema_26:  Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- price relative to MAs (ratios) ---
+    # --- price relative to MAs ---
     px_over_sma_20:  Mapped[float] = mapped_column(Float, nullable=False)
     px_over_sma_50:  Mapped[float] = mapped_column(Float, nullable=False)
     px_over_sma_200: Mapped[float] = mapped_column(Float, nullable=False)
@@ -178,19 +174,93 @@ class FeaturesDaily(Base):
     macd:        Mapped[float] = mapped_column(Float, nullable=False)
     macd_signal: Mapped[float] = mapped_column(Float, nullable=False)
     macd_hist:   Mapped[float] = mapped_column(Float, nullable=False)
-    roc_10:      Mapped[float] = mapped_column(Float, nullable=False)   # rate of change, 10d
+    roc_10:      Mapped[float] = mapped_column(Float, nullable=False)
 
     # --- volume ---
-    rel_volume_20d: Mapped[float] = mapped_column(Float, nullable=False)  # today / 20d avg
-    volume_z_20d:   Mapped[float] = mapped_column(Float, nullable=False)  # (today - mean) / std
+    rel_volume_20d: Mapped[float] = mapped_column(Float, nullable=False)
+    volume_z_20d:   Mapped[float] = mapped_column(Float, nullable=False)
 
     # --- market context ---
-    mkt_ret_1d: Mapped[float] = mapped_column(Float, nullable=False)   # Nifty 50, 1d log return
-    mkt_ret_5d: Mapped[float] = mapped_column(Float, nullable=False)   # Nifty 50, 5d log return
-    beta_60d:   Mapped[float] = mapped_column(Float, nullable=False)   # 60d rolling beta vs Nifty
+    mkt_ret_1d: Mapped[float] = mapped_column(Float, nullable=False)
+    mkt_ret_5d: Mapped[float] = mapped_column(Float, nullable=False)
+    beta_60d:   Mapped[float] = mapped_column(Float, nullable=False)
 
     # --- sector context ---
-    sector_ret_1d: Mapped[float] = mapped_column(Float, nullable=False)  # mean 1d log return of peers
+    sector_ret_1d: Mapped[float] = mapped_column(Float, nullable=False)
 
     def __repr__(self) -> str:
         return f"<FeaturesDaily sec={self.security_id} {self.date}>"
+
+
+# ---------------------------------------------------------------------------
+# fundamentals  (Stage 6)
+# ---------------------------------------------------------------------------
+# One row per security. All value columns are nullable — NSE-listed equities
+# genuinely vary in what they report, and Yahoo does not guarantee every
+# field for every ticker. Missing values stay NULL. The API and UI render
+# NULL as "—"; they never invent zeros.
+
+class FundamentalsRow(Base):
+    __tablename__ = "fundamentals"
+
+    id:          Mapped[int]      = mapped_column(Integer, primary_key=True)
+    security_id: Mapped[int]      = mapped_column(
+        ForeignKey("securities.id", ondelete="CASCADE"),
+        unique=True,              # one row per security
+        nullable=False,
+    )
+    as_of:       Mapped[date | None]     = mapped_column(Date, nullable=True)
+    updated_at:  Mapped[datetime]        = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+    # --- market data ---
+    current_price:      Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_close:     Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_cap:         Mapped[float | None] = mapped_column(Float, nullable=True)
+    enterprise_value:   Mapped[float | None] = mapped_column(Float, nullable=True)
+    high_52w:           Mapped[float | None] = mapped_column(Float, nullable=True)
+    low_52w:            Mapped[float | None] = mapped_column(Float, nullable=True)
+    shares_outstanding: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- valuation ---
+    pe_trailing:    Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_to_book:  Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_to_sales: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- earnings ---
+    eps_trailing: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- revenue / profit ---
+    total_revenue:    Mapped[float | None] = mapped_column(Float, nullable=True)
+    gross_profits:    Mapped[float | None] = mapped_column(Float, nullable=True)
+    net_income:       Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_margin:    Mapped[float | None] = mapped_column(Float, nullable=True)
+    return_on_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    return_on_assets: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- balance sheet ---
+    total_debt:     Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_cash:     Mapped[float | None] = mapped_column(Float, nullable=True)
+    debt_to_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- dividends ---
+    dividend_rate:  Mapped[float | None] = mapped_column(Float, nullable=True)
+    dividend_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
+    payout_ratio:   Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- profile ---
+    long_name:   Mapped[str | None] = mapped_column(String(256), nullable=True)
+    yf_sector:   Mapped[str | None] = mapped_column(String(64),  nullable=True)
+    industry:    Mapped[str | None] = mapped_column(String(128), nullable=True)
+    employees:   Mapped[int | None] = mapped_column(Integer, nullable=True)
+    city:        Mapped[str | None] = mapped_column(String(64),  nullable=True)
+    country:     Mapped[str | None] = mapped_column(String(64),  nullable=True)
+    website:     Mapped[str | None] = mapped_column(String(256), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- reference ---
+    beta_yf: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<FundamentalsRow sec={self.security_id} as_of={self.as_of}>"
