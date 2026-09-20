@@ -110,6 +110,46 @@ class SnapshotOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# indices  (Stage 4)
+# ---------------------------------------------------------------------------
+
+class IndexQuote(BaseModel):
+    """Latest bar and change for one market index."""
+    symbol:         str
+    name:           str
+    as_of:          date
+    close:          float
+    change_1d:      float | None
+    change_1d_pct:  float | None
+
+
+class IndexSnapshotOut(BaseModel):
+    as_of:   date
+    indices: list[IndexQuote]
+
+
+# ---------------------------------------------------------------------------
+# movers  (Stage 4)
+# ---------------------------------------------------------------------------
+
+class MoverOut(BaseModel):
+    """One security in the top-movers list."""
+    ticker:        str
+    symbol:        str
+    name:          str
+    sector:        str
+    close:         float
+    change_1d_pct: float
+    volume:        int
+
+
+class MoversOut(BaseModel):
+    as_of:  date
+    count:  int
+    movers: list[MoverOut]
+
+
+# ---------------------------------------------------------------------------
 # errors
 # ---------------------------------------------------------------------------
 

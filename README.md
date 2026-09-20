@@ -12,8 +12,9 @@ and probabilistic 7/15/30-day forecasts with explanations.
 
 One analysis per session. Many users. No fake precision.
 
-**Status:** Stage 3 complete — read-only API live at `/api`. No ML, no
-news, no real UI yet.
+**Status:** Stage 4 complete — home page, live search, and a
+snapshot-driven stock page render against the live API. No ML, no news,
+no charts yet.
 
 ---
 
@@ -47,7 +48,7 @@ news, no real UI yet.
 | Data | pandas, numpy, yfinance |
 | ML (later) | scikit-learn, PyTorch (Colab training), ONNX Runtime (local inference) |
 | NLP (later) | VADER → FinBERT-ONNX |
-| Frontend | React 18 + Vite 5 + TailwindCSS 3 |
+| Frontend | React 18 + Vite 5 + TailwindCSS 3 + React Router 6 + React Query 5 |
 | Charts (later) | lightweight-charts |
 
 ---
@@ -72,11 +73,11 @@ quantpulse/
 │   └── requirements.txt
 ├── frontend/               React + Vite + Tailwind
 │   └── src/
-│       ├── api/            backend client
-│       ├── pages/
-│       ├── components/
-│       ├── charts/
-│       └── styles/
+│       ├── api/            backend client + React Query hooks
+│       ├── components/     Layout, Search, MarketStrip, TopMovers
+│       ├── charts/         (reserved — Stage 5+)
+│       ├── pages/          Home, Stock
+│       └── styles/         Tailwind entry
 ├── data/
 │   ├── universe.json       frozen Nifty 50 list
 │   └── quantpulse.db       SQLite (gitignored)
@@ -139,8 +140,10 @@ make run-frontend
 # → http://localhost:5173
 ```
 
-Open <http://localhost:5173>. You should see the Quantpulse shell with a
-green `backend: ok` indicator.
+Open <http://localhost:5173>. You land on the **market overview** —
+indices strip, top movers, and a market-summary placeholder. The search
+box in the top bar autocompletes over the 50 securities; pressing Enter
+navigates to `/stock/:ticker`.
 
 API docs (Swagger UI): <http://127.0.0.1:8000/docs>
 
@@ -196,7 +199,7 @@ features_daily     :  51,939 rows   (2022-07-05 → 2026-09-18)
 
 ## API
 
-Five endpoints under `/api`. All responses are JSON. Full interactive
+Seven endpoints under `/api`. All responses are JSON. Full interactive
 reference at <http://127.0.0.1:8000/docs>.
 
 | Method | Path | Description |
@@ -207,14 +210,36 @@ reference at <http://127.0.0.1:8000/docs>.
 | GET | `/api/securities/{ticker}/prices?range=1y` | Daily OHLCV history |
 | GET | `/api/securities/{ticker}/features?range=1y` | Daily feature vector |
 | GET | `/api/securities/{ticker}/snapshot` | Latest price + change + features |
+| GET | `/api/indices/snapshot` | Latest bar + change for the three indices |
+| GET | `/api/movers?limit=10` | Top movers by absolute 1-day % change |
 
 `range` accepts `1w`, `1m`, `3m`, `6m`, `1y`, `3y`, `5y`, `max`.
-Default is `1y`.
+Default is `1y`. `limit` accepts 1–50.
 
-Errors: `404` for unknown ticker, `400` for invalid range.
+Errors: `404` for unknown ticker, `400` for invalid range, `422` for
+invalid `limit`.
 
 Responses are cached in-memory for 60 seconds. Second reads of any
 endpoint return in < 5 ms.
+
+---
+
+## Frontend
+
+React 18 + Vite 5, styled with Tailwind. Data fetching via React Query
+with a 60-second `staleTime` matching the backend cache TTL. Routing via
+React Router 6.
+
+**Pages:**
+
+- `/` — Market overview: indices strip, top movers, market summary
+  placeholder.
+- `/stock/:ticker` — Snapshot-driven header (price, change, OHLC row).
+  Chart, narrative, and forecast panels arrive in Stage 5+.
+
+**Search** in the top bar autocompletes over the full security list
+(client-side, since only 50 rows). Keyboard-navigable: ↑ / ↓ to move,
+Enter to open, Esc to close.
 
 ---
 
@@ -267,8 +292,8 @@ under `docs/` and freezes its files before the next stage begins.
 | 01 | Data Provider Layer + Stock Universe | ✅ complete |
 | 02 | Feature Engine | ✅ complete |
 | 03 | Backend API Core | ✅ complete |
-| 04 | Frontend Foundation + Home + Search | ⏳ next |
-| 05 | Stock Page Core + 5-Year Chart | pending |
+| 04 | Frontend Foundation + Home + Search | ✅ complete |
+| 05 | Stock Page Core + 5-Year Chart | ⏳ next |
 | 06 | Fundamentals + Company Info | pending |
 | 07 | News Pipeline + NLP | pending |
 | 08 | Forecasting Engine | pending |
