@@ -12,8 +12,8 @@ and probabilistic 7/15/30-day forecasts with explanations.
 
 One analysis per session. Many users. No fake precision.
 
-**Status:** Stage 1 complete — data pipeline and stock universe populated.
-No ML, no news, no real UI yet.
+**Status:** Stage 2 complete — data pipeline, index ingestion, and the
+feature engine are populated. No ML, no news, no real UI yet.
 
 ---
 
@@ -62,7 +62,7 @@ quantpulse/
 │   │   ├── core/           config, logging
 │   │   ├── db/             SQLAlchemy engine, session, models
 │   │   ├── providers/      external data interfaces + implementations
-│   │   ├── pipeline/       (reserved — Stage 2+)
+│   │   ├── pipeline/       feature engine
 │   │   ├── ml/             (reserved — Stage 8+)
 │   │   ├── nlp/            (reserved — Stage 7+)
 │   │   ├── explain/        (reserved — Stage 10+)
@@ -148,7 +148,10 @@ API docs (Swagger UI): <http://127.0.0.1:8000/docs>
 
 ## Data pipeline
 
-Populate the database with 5 years of daily OHLCV for the Nifty 50:
+Three idempotent scripts populate the database. Run in this order on a
+fresh clone.
+
+### 1. Price history (Nifty 50)
 
 ```bash
 # single ticker
@@ -158,11 +161,60 @@ Populate the database with 5 years of daily OHLCV for the Nifty 50:
 .venv/bin/python backend/scripts/ingest_prices.py --universe nifty50 --years 5
 ```
 
-Idempotent. Re-running for the same range updates rows in place and
-never duplicates. Every run is logged to `ingest_log`.
+### 2. Market indices (Nifty 50, Bank Nifty, India VIX)
 
-Current database state: **50 securities, 62,138 daily price rows,
-2021-09-16 → 2026-09-18**.
+```bash
+.venv/bin/python backend/scripts/ingest_indices.py --years 5
+```
+
+### 3. Feature engine
+
+Computes 24 features per (security, date) from raw prices plus index
+context. Warm-up rows are dropped; only fully-populated rows are stored.
+
+```bash
+# single ticker
+.venv/bin/python backend/scripts/build_features.py --ticker TCS.NS
+
+# full universe (~30 seconds)
+.venv/bin/python backend/scripts/build_features.py --universe nifty50
+```
+
+Every run is logged to `ingest_log`. Re-running is safe and never
+duplicates rows.
+
+### Current database state
+
+```
+securities         :  50
+prices_daily       :  62,138 rows   (2021-09-16 → 2026-09-18)
+market_index_daily :   3,707 rows   (^NSEI, ^NSEBANK, ^INDIAVIX)
+features_daily     :  51,939 rows   (2022-07-05 → 2026-09-18)
+```
+
+---
+
+## Feature catalogue
+
+24 columns per row in `features_daily`, grouped:
+
+| Group | Columns |
+|---|---|
+| Returns | `ret_1d`, `ret_5d`, `ret_20d` (log) |
+| Volatility | `vol_20d`, `atr_14d` |
+| Moving averages | `sma_20`, `sma_50`, `sma_200`, `ema_12`, `ema_26` |
+| Price vs MA | `px_over_sma_20`, `px_over_sma_50`, `px_over_sma_200` |
+| Momentum | `rsi_14`, `macd`, `macd_signal`, `macd_hist`, `roc_10` |
+| Volume | `rel_volume_20d`, `volume_z_20d` |
+| Market | `mkt_ret_1d`, `mkt_ret_5d`, `beta_60d` |
+| Sector | `sector_ret_1d` |
+
+**Warm-up:** ~203 rows per ticker (dominated by `sma_200`). Tickers with
+1243 price rows produce 1038–1039 feature rows.
+
+**Extremes are kept, not clamped.** `beta_60d` can exceed 5 during
+idiosyncratic events (e.g. Adani Group, March–April 2023). Winsorization
+is a Stage 8 modelling concern, not a Stage 2 feature concern.
 
 ---
 
@@ -189,8 +241,8 @@ under `docs/` and freezes its files before the next stage begins.
 |---|---|---|
 | 00 | Foundations | ✅ complete |
 | 01 | Data Provider Layer + Stock Universe | ✅ complete |
-| 02 | Feature Engine | ⏳ next |
-| 03 | Backend API Core | pending |
+| 02 | Feature Engine | ✅ complete |
+| 03 | Backend API Core | ⏳ next |
 | 04 | Frontend Foundation + Home + Search | pending |
 | 05 | Stock Page Core + 5-Year Chart | pending |
 | 06 | Fundamentals + Company Info | pending |
