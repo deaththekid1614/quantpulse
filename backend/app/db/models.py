@@ -2,11 +2,9 @@
 ORM models.
 
 Stage 1 defined the storage layer for prices.
-Stage 2 added:
-  - market_index_daily  (Nifty 50, Bank Nifty, India VIX)
-  - features_daily      (computed features for every security per day)
-Stage 6 adds:
-  - fundamentals        (company fundamentals, one row per security)
+Stage 2 added market_index_daily and features_daily.
+Stage 6 added fundamentals.
+Stage 7 adds news_articles.
 
 Future stages append new tables to this file — never rewrite existing ones.
 """
@@ -44,7 +42,7 @@ class Security(Base):
 
     id:         Mapped[int]      = mapped_column(Integer, primary_key=True)
     ticker:     Mapped[str]      = mapped_column(String(32), unique=True, nullable=False, index=True)
-    symbol:     Mapped[str]      = mapped_column(String(32), nullable=False)   # e.g. "TCS" (NSE)
+    symbol:     Mapped[str]      = mapped_column(String(32), nullable=False)
     name:       Mapped[str]      = mapped_column(String(128), nullable=False)
     sector:     Mapped[str]      = mapped_column(String(64),  nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
@@ -98,7 +96,7 @@ class IngestLog(Base):
     ticker:       Mapped[str]             = mapped_column(String(32), nullable=False, index=True)
     rows_added:   Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
     rows_updated: Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
-    status:       Mapped[str]             = mapped_column(String(16), nullable=False)  # 'ok' | 'error'
+    status:       Mapped[str]             = mapped_column(String(16), nullable=False)
     error:        Mapped[str | None]      = mapped_column(Text, nullable=True)
     started_at:   Mapped[datetime]        = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     finished_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -108,7 +106,7 @@ class IngestLog(Base):
 
 
 # ---------------------------------------------------------------------------
-# market_index_daily  (Stage 2)
+# market_index_daily
 # ---------------------------------------------------------------------------
 
 class MarketIndexDaily(Base):
@@ -132,7 +130,7 @@ class MarketIndexDaily(Base):
 
 
 # ---------------------------------------------------------------------------
-# features_daily  (Stage 2)
+# features_daily
 # ---------------------------------------------------------------------------
 
 class FeaturesDaily(Base):
@@ -148,44 +146,36 @@ class FeaturesDaily(Base):
     )
     date:        Mapped[date] = mapped_column(Date, nullable=False)
 
-    # --- returns (log) ---
     ret_1d:  Mapped[float] = mapped_column(Float, nullable=False)
     ret_5d:  Mapped[float] = mapped_column(Float, nullable=False)
     ret_20d: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- volatility ---
     vol_20d: Mapped[float] = mapped_column(Float, nullable=False)
     atr_14d: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- moving averages ---
     sma_20:  Mapped[float] = mapped_column(Float, nullable=False)
     sma_50:  Mapped[float] = mapped_column(Float, nullable=False)
     sma_200: Mapped[float] = mapped_column(Float, nullable=False)
     ema_12:  Mapped[float] = mapped_column(Float, nullable=False)
     ema_26:  Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- price relative to MAs ---
     px_over_sma_20:  Mapped[float] = mapped_column(Float, nullable=False)
     px_over_sma_50:  Mapped[float] = mapped_column(Float, nullable=False)
     px_over_sma_200: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- momentum ---
     rsi_14:      Mapped[float] = mapped_column(Float, nullable=False)
     macd:        Mapped[float] = mapped_column(Float, nullable=False)
     macd_signal: Mapped[float] = mapped_column(Float, nullable=False)
     macd_hist:   Mapped[float] = mapped_column(Float, nullable=False)
     roc_10:      Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- volume ---
     rel_volume_20d: Mapped[float] = mapped_column(Float, nullable=False)
     volume_z_20d:   Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- market context ---
     mkt_ret_1d: Mapped[float] = mapped_column(Float, nullable=False)
     mkt_ret_5d: Mapped[float] = mapped_column(Float, nullable=False)
     beta_60d:   Mapped[float] = mapped_column(Float, nullable=False)
 
-    # --- sector context ---
     sector_ret_1d: Mapped[float] = mapped_column(Float, nullable=False)
 
     def __repr__(self) -> str:
@@ -193,12 +183,8 @@ class FeaturesDaily(Base):
 
 
 # ---------------------------------------------------------------------------
-# fundamentals  (Stage 6)
+# fundamentals
 # ---------------------------------------------------------------------------
-# One row per security. All value columns are nullable — NSE-listed equities
-# genuinely vary in what they report, and Yahoo does not guarantee every
-# field for every ticker. Missing values stay NULL. The API and UI render
-# NULL as "—"; they never invent zeros.
 
 class FundamentalsRow(Base):
     __tablename__ = "fundamentals"
@@ -206,7 +192,7 @@ class FundamentalsRow(Base):
     id:          Mapped[int]      = mapped_column(Integer, primary_key=True)
     security_id: Mapped[int]      = mapped_column(
         ForeignKey("securities.id", ondelete="CASCADE"),
-        unique=True,              # one row per security
+        unique=True,
         nullable=False,
     )
     as_of:       Mapped[date | None]     = mapped_column(Date, nullable=True)
@@ -214,7 +200,6 @@ class FundamentalsRow(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    # --- market data ---
     current_price:      Mapped[float | None] = mapped_column(Float, nullable=True)
     previous_close:     Mapped[float | None] = mapped_column(Float, nullable=True)
     market_cap:         Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -223,15 +208,12 @@ class FundamentalsRow(Base):
     low_52w:            Mapped[float | None] = mapped_column(Float, nullable=True)
     shares_outstanding: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- valuation ---
     pe_trailing:    Mapped[float | None] = mapped_column(Float, nullable=True)
     price_to_book:  Mapped[float | None] = mapped_column(Float, nullable=True)
     price_to_sales: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- earnings ---
     eps_trailing: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- revenue / profit ---
     total_revenue:    Mapped[float | None] = mapped_column(Float, nullable=True)
     gross_profits:    Mapped[float | None] = mapped_column(Float, nullable=True)
     net_income:       Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -239,17 +221,14 @@ class FundamentalsRow(Base):
     return_on_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
     return_on_assets: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- balance sheet ---
     total_debt:     Mapped[float | None] = mapped_column(Float, nullable=True)
     total_cash:     Mapped[float | None] = mapped_column(Float, nullable=True)
     debt_to_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- dividends ---
     dividend_rate:  Mapped[float | None] = mapped_column(Float, nullable=True)
     dividend_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
     payout_ratio:   Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- profile ---
     long_name:   Mapped[str | None] = mapped_column(String(256), nullable=True)
     yf_sector:   Mapped[str | None] = mapped_column(String(64),  nullable=True)
     industry:    Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -259,8 +238,57 @@ class FundamentalsRow(Base):
     website:     Mapped[str | None] = mapped_column(String(256), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # --- reference ---
     beta_yf: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     def __repr__(self) -> str:
         return f"<FundamentalsRow sec={self.security_id} as_of={self.as_of}>"
+
+
+# ---------------------------------------------------------------------------
+# news_articles  (Stage 7)
+# ---------------------------------------------------------------------------
+# One row per unique article. URL is the natural dedup key. The three NLP
+# score columns are nullable so articles can be ingested first and scored
+# later (or re-scored without re-fetching).
+
+# ---------------------------------------------------------------------------
+# news_articles  (Stage 7)
+# ---------------------------------------------------------------------------
+# One row per (security, article). The same underlying article can appear
+# under multiple tickers if it legitimately mentions them — an IT-sector
+# roundup covering TCS, INFY, and WIPRO gets three rows, one per ticker,
+# each with its own relevance score. Deduplication is therefore on the
+# composite key (security_id, url), not on URL alone.
+
+class NewsArticleRow(Base):
+    __tablename__ = "news_articles"
+    __table_args__ = (
+        UniqueConstraint("security_id", "url", name="uq_news_articles_security_url"),
+        Index("ix_news_articles_security_published",   "security_id", "published_at"),
+        Index("ix_news_articles_security_importance",  "security_id", "importance_score"),
+        Index("ix_news_articles_url",                  "url"),
+    )
+
+    id:          Mapped[int]      = mapped_column(Integer, primary_key=True)
+    security_id: Mapped[int]      = mapped_column(
+        ForeignKey("securities.id", ondelete="CASCADE"), nullable=False
+    )
+
+    title:        Mapped[str]           = mapped_column(String(512), nullable=False)
+    url:          Mapped[str]           = mapped_column(String(1024), nullable=False)
+    source:       Mapped[str | None]    = mapped_column(String(128), nullable=True)
+    published_at: Mapped[datetime]      = mapped_column(DateTime(timezone=True), nullable=False)
+    summary:      Mapped[str | None]    = mapped_column(Text, nullable=True)
+    body:         Mapped[str | None]    = mapped_column(Text, nullable=True)
+
+    sentiment_score:  Mapped[float | None] = mapped_column(Float, nullable=True)
+    sentiment_label:  Mapped[str | None]   = mapped_column(String(16), nullable=True)
+    relevance_score:  Mapped[float | None] = mapped_column(Float, nullable=True)
+    importance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<NewsArticleRow sec={self.security_id} {self.published_at.date()} {self.source}>"

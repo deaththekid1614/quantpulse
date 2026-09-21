@@ -3,14 +3,10 @@ Pydantic v2 response models for the Quantpulse read API.
 
 Every route returns one of these. Defined once, reused everywhere. No
 route returns a raw ORM object or a raw dict.
-
-Feature values are exposed as a dict keyed by column name rather than
-positional fields, so adding a new feature in Stage 8 does not require
-touching this file.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,11 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------------------------------------------------------------------
 
 class SecurityOut(BaseModel):
-    """Public metadata for one security."""
     model_config = ConfigDict(from_attributes=True)
-
-    ticker: str = Field(..., description="Yahoo-format ticker, e.g. TCS.NS")
-    symbol: str = Field(..., description="NSE symbol, e.g. TCS")
+    ticker: str
+    symbol: str
     name:   str
     sector: str
 
@@ -96,8 +90,8 @@ class SnapshotOut(BaseModel):
     sector:          str
     as_of:           date
     price:           LatestPrice
-    change_1d:       float | None = Field(None, description="Absolute close change vs previous session")
-    change_1d_pct:   float | None = Field(None, description="Percent change vs previous session")
+    change_1d:       float | None = None
+    change_1d_pct:   float | None = None
     features:        dict[str, float] = Field(default_factory=dict)
 
 
@@ -169,29 +163,16 @@ class StatsOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# fundamentals  (Stage 6)
+# fundamentals
 # ---------------------------------------------------------------------------
 
 class FundamentalsOut(BaseModel):
-    """
-    Company fundamentals. Every metric is nullable — NSE-listed equities
-    genuinely vary in what Yahoo reports. Consumers must render missing
-    values as an em-dash or similar, never as a fabricated zero.
-
-    Units:
-      profit_margin, return_on_equity, return_on_assets, payout_ratio
-        are fractions (0.18 = 18%).
-      dividend_yield is a percent (3.09 = 3.09%).
-      debt_to_equity is Yahoo's raw value, typically a percent for NSE.
-      All currency fields are INR.
-    """
     ticker: str
     symbol: str
     name:   str
-    sector: str                              # our sector (from universe.json)
-    as_of:  date | None = Field(None, description="Date the metrics were captured")
+    sector: str
+    as_of:  date | None = None
 
-    # --- market data ---
     current_price:      float | None = None
     previous_close:     float | None = None
     market_cap:         float | None = None
@@ -200,15 +181,12 @@ class FundamentalsOut(BaseModel):
     low_52w:            float | None = None
     shares_outstanding: float | None = None
 
-    # --- valuation ---
     pe_trailing:    float | None = None
     price_to_book:  float | None = None
     price_to_sales: float | None = None
 
-    # --- earnings ---
     eps_trailing: float | None = None
 
-    # --- revenue / profit ---
     total_revenue:    float | None = None
     gross_profits:    float | None = None
     net_income:       float | None = None
@@ -216,18 +194,15 @@ class FundamentalsOut(BaseModel):
     return_on_equity: float | None = None
     return_on_assets: float | None = None
 
-    # --- balance sheet ---
     total_debt:     float | None = None
     total_cash:     float | None = None
     debt_to_equity: float | None = None
 
-    # --- dividends ---
     dividend_rate:  float | None = None
     dividend_yield: float | None = None
     payout_ratio:   float | None = None
 
-    # --- profile ---
-    yf_sector:   str | None = None       # Yahoo's coarse sector, distinct from ours
+    yf_sector:   str | None = None
     industry:    str | None = None
     employees:   int | None = None
     city:        str | None = None
@@ -235,8 +210,41 @@ class FundamentalsOut(BaseModel):
     website:     str | None = None
     description: str | None = None
 
-    # --- reference ---
     beta_yf: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# news  (Stage 7)
+# ---------------------------------------------------------------------------
+
+class NewsArticleOut(BaseModel):
+    """
+    One news article, as stored and scored.
+
+    - sentiment_label: 'positive' | 'neutral' | 'negative'
+    - sentiment_score: VADER+overlay compound in [-1, 1]
+    - relevance_score: 0–1, how confident we are this article is about the
+      security. Articles below 0.30 are never stored.
+    - importance_score: 0–1, how likely this article is to matter. Combines
+      publisher reputation, recency, and market-impact keywords.
+    """
+    title:            str
+    url:              str
+    source:           str | None = None
+    published_at:     datetime
+    sentiment_label:  str | None = None
+    sentiment_score:  float | None = None
+    relevance_score:  float | None = None
+    importance_score: float | None = None
+
+
+class NewsFeedOut(BaseModel):
+    ticker: str
+    symbol: str
+    name:   str
+    sector: str
+    count:  int
+    articles: list[NewsArticleOut]
 
 
 # ---------------------------------------------------------------------------

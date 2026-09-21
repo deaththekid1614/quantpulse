@@ -62,6 +62,14 @@ export const getStats = (ticker) =>
 export const getFundamentals = (ticker) =>
   apiFetch(`/api/securities/${enc(ticker)}/fundamentals`);
 
+// --- news ---
+export const getNews = (ticker, limit = 20, minImportance = 0) => {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (minImportance > 0) params.set("min_importance", String(minImportance));
+  return apiFetch(`/api/securities/${enc(ticker)}/news?${params.toString()}`);
+};
+
 // --- market ---
 export const getIndicesSnapshot = () => apiFetch("/api/indices/snapshot");
 export const getMovers = (limit = 10) => apiFetch(`/api/movers?limit=${limit}`);

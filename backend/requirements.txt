@@ -1,4 +1,4 @@
-# Quantpulse backend dependencies — Stage 1
+# Quantpulse backend dependencies — Stage 7
 # Python 3.12. Installed via:  make setup-backend  (uv pip install)
 
 # --- Web framework ---
@@ -18,3 +18,7 @@ pandas>=2.2,<3
 numpy>=1.26,<3
 yfinance>=0.2.50,<1
 requests>=2.32,<3
+
+# --- News & NLP ---
+feedparser>=6.0,<7
+vaderSentiment>=3.3,<4

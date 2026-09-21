@@ -8,6 +8,7 @@ import PerformanceNarrative from "../components/PerformanceNarrative.jsx";
 import StatsGrid from "../components/StatsGrid.jsx";
 import CompanySnapshot from "../components/CompanySnapshot.jsx";
 import CompanyProfile from "../components/CompanyProfile.jsx";
+import NewsFeed from "../components/NewsFeed.jsx";
 
 function fmtPrice(n) {
   return n.toLocaleString("en-IN", {
@@ -158,6 +159,12 @@ export default function Stock() {
         <StatsGrid ticker={ticker} />
       </section>
 
+      {/* News */}
+      <section>
+        <SectionTitle>Recent news</SectionTitle>
+        <NewsFeed ticker={ticker} limit={15} />
+      </section>
+
       {/* Fundamentals */}
       <section>
         <SectionTitle>Company snapshot</SectionTitle>
@@ -192,7 +199,6 @@ export default function Stock() {
             continues to grow:
           </div>
           <ul className="space-y-1 text-ink-500">
-            <li>· News feed &amp; sentiment — Stage 7</li>
             <li>· 7/15/30-day probabilistic forecasts — Stage 8</li>
             <li>· Risk assessment &amp; stress detection — Stage 9</li>
             <li>· Full plain-English analysis — Stage 10</li>
