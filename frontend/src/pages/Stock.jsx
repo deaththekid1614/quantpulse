@@ -9,6 +9,7 @@ import StatsGrid from "../components/StatsGrid.jsx";
 import CompanySnapshot from "../components/CompanySnapshot.jsx";
 import CompanyProfile from "../components/CompanyProfile.jsx";
 import NewsFeed from "../components/NewsFeed.jsx";
+import VolForecastPanel from "../components/VolForecastPanel.jsx";
 
 function fmtPrice(n) {
   return n.toLocaleString("en-IN", {
@@ -34,10 +35,7 @@ function fmtDate(iso) {
 
 function BackLink() {
   return (
-    <Link
-      to="/"
-      className="text-ink-400 text-sm hover:text-white inline-block"
-    >
+    <Link to="/" className="text-ink-400 text-sm hover:text-white inline-block">
       ← Back to market
     </Link>
   );
@@ -57,9 +55,7 @@ function SectionTitle({ children, right }) {
 function BigStat({ label, value }) {
   return (
     <div>
-      <div className="text-xs font-mono text-ink-500 tracking-wider">
-        {label}
-      </div>
+      <div className="text-xs font-mono text-ink-500 tracking-wider">{label}</div>
       <div className="mt-0.5 text-sm tabular-nums text-ink-200">{value}</div>
     </div>
   );
@@ -114,7 +110,6 @@ export default function Stock() {
     <div className="space-y-10">
       <BackLink />
 
-      {/* Header */}
       <div>
         <div className="flex items-baseline gap-4 flex-wrap">
           <h1 className="text-3xl font-semibold text-white tracking-tight font-mono">
@@ -127,7 +122,6 @@ export default function Stock() {
         </div>
       </div>
 
-      {/* Price block */}
       <div className="flex items-end gap-6 flex-wrap">
         <div className="text-4xl font-medium text-white tabular-nums">
           ₹{fmtPrice(price.close)}
@@ -139,7 +133,6 @@ export default function Stock() {
         </div>
       </div>
 
-      {/* Chart */}
       <section>
         <SectionTitle right={<TimeframeTabs value={range} onChange={setRange} />}>
           Price history
@@ -147,37 +140,36 @@ export default function Stock() {
         <PriceChart ticker={ticker} range={range} />
       </section>
 
-      {/* Narrative */}
       <section>
         <SectionTitle>How is {symbol} doing?</SectionTitle>
         <PerformanceNarrative ticker={ticker} symbol={symbol} />
       </section>
 
-      {/* Statistics */}
       <section>
         <SectionTitle>Statistics</SectionTitle>
         <StatsGrid ticker={ticker} />
       </section>
 
-      {/* News */}
+      <section>
+        <SectionTitle>Volatility outlook</SectionTitle>
+        <VolForecastPanel ticker={ticker} />
+      </section>
+
       <section>
         <SectionTitle>Recent news</SectionTitle>
         <NewsFeed ticker={ticker} limit={15} />
       </section>
 
-      {/* Fundamentals */}
       <section>
         <SectionTitle>Company snapshot</SectionTitle>
         <CompanySnapshot ticker={ticker} />
       </section>
 
-      {/* Profile */}
       <section>
         <SectionTitle>About {symbol}</SectionTitle>
         <CompanyProfile ticker={ticker} />
       </section>
 
-      {/* Today's OHLC */}
       <section>
         <SectionTitle>Today's session</SectionTitle>
         <div className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-4">
@@ -191,7 +183,6 @@ export default function Stock() {
         </div>
       </section>
 
-      {/* Placeholders */}
       <section className="rounded-lg bg-ink-800 border border-ink-700 px-5 py-5">
         <div className="text-sm text-ink-400 leading-relaxed">
           <div className="mb-2">
@@ -199,9 +190,9 @@ export default function Stock() {
             continues to grow:
           </div>
           <ul className="space-y-1 text-ink-500">
-            <li>· 7/15/30-day probabilistic forecasts — Stage 8</li>
             <li>· Risk assessment &amp; stress detection — Stage 9</li>
             <li>· Full plain-English analysis — Stage 10</li>
+            <li>· Post-market batch automation — Stage 11</li>
           </ul>
         </div>
       </section>

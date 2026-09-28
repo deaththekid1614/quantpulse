@@ -1,12 +1,15 @@
 """
 ORM models.
 
-Stage 1 defined the storage layer for prices.
-Stage 2 added market_index_daily and features_daily.
-Stage 6 added fundamentals.
-Stage 7 adds news_articles.
+Stage 1     →  prices_daily, securities, ingest_log
+Stage 2     →  market_index_daily, features_daily
+Stage 6     →  fundamentals
+Stage 7     →  news_articles
+Stage 8B    →  rich_features_daily
+Stage 8B-v2 →  vol_forecasts
 
-Future stages append new tables to this file — never rewrite existing ones.
+Future stages append new tables to this file — never rewrite existing
+ones.
 """
 from __future__ import annotations
 
@@ -245,28 +248,16 @@ class FundamentalsRow(Base):
 
 
 # ---------------------------------------------------------------------------
-# news_articles  (Stage 7)
+# news_articles
 # ---------------------------------------------------------------------------
-# One row per unique article. URL is the natural dedup key. The three NLP
-# score columns are nullable so articles can be ingested first and scored
-# later (or re-scored without re-fetching).
-
-# ---------------------------------------------------------------------------
-# news_articles  (Stage 7)
-# ---------------------------------------------------------------------------
-# One row per (security, article). The same underlying article can appear
-# under multiple tickers if it legitimately mentions them — an IT-sector
-# roundup covering TCS, INFY, and WIPRO gets three rows, one per ticker,
-# each with its own relevance score. Deduplication is therefore on the
-# composite key (security_id, url), not on URL alone.
 
 class NewsArticleRow(Base):
     __tablename__ = "news_articles"
     __table_args__ = (
         UniqueConstraint("security_id", "url", name="uq_news_articles_security_url"),
-        Index("ix_news_articles_security_published",   "security_id", "published_at"),
-        Index("ix_news_articles_security_importance",  "security_id", "importance_score"),
-        Index("ix_news_articles_url",                  "url"),
+        Index("ix_news_articles_security_published",  "security_id", "published_at"),
+        Index("ix_news_articles_security_importance", "security_id", "importance_score"),
+        Index("ix_news_articles_url",                 "url"),
     )
 
     id:          Mapped[int]      = mapped_column(Integer, primary_key=True)
@@ -292,3 +283,109 @@ class NewsArticleRow(Base):
 
     def __repr__(self) -> str:
         return f"<NewsArticleRow sec={self.security_id} {self.published_at.date()} {self.source}>"
+
+
+# ---------------------------------------------------------------------------
+# rich_features_daily
+# ---------------------------------------------------------------------------
+
+class RichFeaturesDaily(Base):
+    __tablename__ = "rich_features_daily"
+    __table_args__ = (
+        UniqueConstraint("security_id", "date", name="uq_rich_features_daily_security_date"),
+        Index("ix_rich_features_daily_security_date", "security_id", "date"),
+    )
+
+    id:          Mapped[int]      = mapped_column(Integer, primary_key=True)
+    security_id: Mapped[int]      = mapped_column(
+        ForeignKey("securities.id", ondelete="CASCADE"), nullable=False
+    )
+    date:        Mapped[date]     = mapped_column(Date, nullable=False)
+    created_at:  Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+    # --- news aggregates (7) ---
+    news_sent_7d_mean:        Mapped[float | None] = mapped_column(Float, nullable=True)
+    news_count_7d:            Mapped[int | None]   = mapped_column(Integer, nullable=True)
+    news_sent_30d_mean:       Mapped[float | None] = mapped_column(Float, nullable=True)
+    news_sent_30d_std:        Mapped[float | None] = mapped_column(Float, nullable=True)
+    news_count_30d:           Mapped[int | None]   = mapped_column(Integer, nullable=True)
+    news_importance_wmean_30d:Mapped[float | None] = mapped_column(Float, nullable=True)
+    news_pos_frac_30d:        Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- market context (8) ---
+    vix_level:          Mapped[float | None] = mapped_column(Float, nullable=True)
+    vix_change_5d:      Mapped[float | None] = mapped_column(Float, nullable=True)
+    vix_zscore_60d:     Mapped[float | None] = mapped_column(Float, nullable=True)
+    nifty_ret_20d:      Mapped[float | None] = mapped_column(Float, nullable=True)
+    nifty_drawdown_60d: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nifty_vol_20d:      Mapped[float | None] = mapped_column(Float, nullable=True)
+    breadth_5d:         Mapped[float | None] = mapped_column(Float, nullable=True)
+    mkt_stress:         Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- cross-sectional (6) ---
+    sector_rank_ret_20d:   Mapped[float | None] = mapped_column(Float, nullable=True)
+    universe_rank_ret_5d:  Mapped[float | None] = mapped_column(Float, nullable=True)
+    pct_from_52w_high:     Mapped[float | None] = mapped_column(Float, nullable=True)
+    corr_to_nifty_60d:     Mapped[float | None] = mapped_column(Float, nullable=True)
+    beta_residual_5d:      Mapped[float | None] = mapped_column(Float, nullable=True)
+    sector_dispersion_20d: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<RichFeaturesDaily sec={self.security_id} {self.date}>"
+
+
+# ---------------------------------------------------------------------------
+# vol_forecasts  (Stage 8B-v2)
+# ---------------------------------------------------------------------------
+# One row per (security, forecast date, horizon, model_version).
+# Stores the model's probability that the security's forward realized
+# volatility over the next `horizon_days` will be above the training-set
+# median threshold. The threshold is also stored so the UI can render
+# "this stock's median 7-day vol is 19.9%".
+#
+# We store BOTH probabilities even though they sum to 1, so the API
+# response is symmetric and the UI doesn't need to compute 1 - p.
+#
+# `model_auc` is the validation AUC of the model that produced this
+# forecast. It is displayed in the UI so users know how strong (or weak)
+# the underlying model is.
+
+class VolForecastRow(Base):
+    __tablename__ = "vol_forecasts"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_id", "date", "horizon_days", "model_version",
+            name="uq_vol_forecasts_sec_date_horizon_version",
+        ),
+        Index("ix_vol_forecasts_security_date", "security_id", "date"),
+    )
+
+    id:               Mapped[int]      = mapped_column(Integer, primary_key=True)
+    security_id:      Mapped[int]      = mapped_column(
+        ForeignKey("securities.id", ondelete="CASCADE"), nullable=False
+    )
+    date:             Mapped[date]     = mapped_column(Date, nullable=False)
+    horizon_days:     Mapped[int]      = mapped_column(Integer, nullable=False)
+
+    prob_high_vol:    Mapped[float]    = mapped_column(Float, nullable=False)
+    prob_low_vol:     Mapped[float]    = mapped_column(Float, nullable=False)
+
+    # Context
+    threshold:        Mapped[float]    = mapped_column(Float, nullable=False)  # training-median vol
+    current_vol_20d:  Mapped[float | None] = mapped_column(Float, nullable=True)  # current realized vol
+
+    # Model quality (validation AUC), displayed for honesty
+    model_auc:        Mapped[float | None] = mapped_column(Float, nullable=True)
+    model_version:    Mapped[str]      = mapped_column(String(64), nullable=False)
+
+    created_at:       Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<VolForecastRow sec={self.security_id} {self.date} "
+            f"h={self.horizon_days} p_high={self.prob_high_vol:.3f}>"
+        )

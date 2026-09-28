@@ -1,8 +1,5 @@
 """
 Pydantic v2 response models for the Quantpulse read API.
-
-Every route returns one of these. Defined once, reused everywhere. No
-route returns a raw ORM object or a raw dict.
 """
 from __future__ import annotations
 
@@ -214,20 +211,10 @@ class FundamentalsOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# news  (Stage 7)
+# news
 # ---------------------------------------------------------------------------
 
 class NewsArticleOut(BaseModel):
-    """
-    One news article, as stored and scored.
-
-    - sentiment_label: 'positive' | 'neutral' | 'negative'
-    - sentiment_score: VADER+overlay compound in [-1, 1]
-    - relevance_score: 0–1, how confident we are this article is about the
-      security. Articles below 0.30 are never stored.
-    - importance_score: 0–1, how likely this article is to matter. Combines
-      publisher reputation, recency, and market-impact keywords.
-    """
     title:            str
     url:              str
     source:           str | None = None
@@ -245,6 +232,41 @@ class NewsFeedOut(BaseModel):
     sector: str
     count:  int
     articles: list[NewsArticleOut]
+
+
+# ---------------------------------------------------------------------------
+# volatility forecast  (Stage 8B-v2)
+# ---------------------------------------------------------------------------
+
+class VolForecastHorizonOut(BaseModel):
+    """
+    One horizon's volatility forecast.
+
+    - prob_high_vol: probability that forward realized volatility will be
+      above the training-set median threshold. 0–1.
+    - prob_low_vol:  1 - prob_high_vol. Stored explicitly for API symmetry.
+    - threshold:     the training median (annualized vol fraction).
+                     E.g. 0.1988 means "19.88% annualized".
+    - current_vol_20d: most recent 20-day realized vol for context.
+    - model_auc:     validation ROC AUC of the model that produced this
+                     forecast. Displayed so users know how strong (or
+                     weak) the underlying model is.
+    """
+    horizon_days:    int
+    prob_high_vol:   float
+    prob_low_vol:    float
+    threshold:       float
+    current_vol_20d: float | None = None
+    model_auc:       float | None = None
+
+
+class VolForecastOut(BaseModel):
+    ticker:   str
+    symbol:   str
+    name:     str
+    sector:   str
+    as_of:    date
+    horizons: list[VolForecastHorizonOut]
 
 
 # ---------------------------------------------------------------------------

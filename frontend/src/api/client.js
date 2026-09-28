@@ -1,11 +1,5 @@
 /**
  * Backend API client.
- *
- * In the browser, paths are relative ("/api/...") and Vite proxies them to
- * the FastAPI backend on 127.0.0.1:8000 (see vite.config.js).
- *
- * In Node (used by tests), the base defaults to the same backend URL so
- * the exact same functions work without any code changes.
  */
 
 const IS_BROWSER = typeof window !== "undefined";
@@ -69,6 +63,10 @@ export const getNews = (ticker, limit = 20, minImportance = 0) => {
   if (minImportance > 0) params.set("min_importance", String(minImportance));
   return apiFetch(`/api/securities/${enc(ticker)}/news?${params.toString()}`);
 };
+
+// --- volatility forecast ---
+export const getVolForecast = (ticker) =>
+  apiFetch(`/api/securities/${enc(ticker)}/vol_forecast`);
 
 // --- market ---
 export const getIndicesSnapshot = () => apiFetch("/api/indices/snapshot");

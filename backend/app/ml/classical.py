@@ -2,43 +2,25 @@
 Binary forecasting model wrapper.
 
 One model per horizon. Each model is a histogram gradient boosting
-classifier wrapped in isotonic probability calibration. This module
-exposes a small, opinionated API:
+classifier wrapped in isotonic probability calibration.
 
-    fit_forecaster(X_train, y_train, X_val, y_val, horizon)  -> FittedForecaster
-    predict_proba(forecaster, X)                             -> np.ndarray (n, 2)
-    predict_direction(forecaster, X)                         -> (dirs, confs)
-    evaluate(forecaster, X, y)                               -> dict of metrics
-    save_forecaster(forecaster, dir)                         -> Path
-    load_forecaster(path)                                    -> FittedForecaster
+Class order
+-----------
+`CLASS_ORDER` is the default for direction forecasting: ("down", "up").
+`fit_forecaster` accepts an optional `class_order` parameter so the same
+wrapper can be reused for other binary tasks — e.g. volatility, where
+the classes are ("low_vol", "high_vol").
 
-Design decisions (locked, Stage 8A — binary):
-
-  - Class order is always ["down", "up"] — alphabetical.
-    We never trust sklearn's implicit ordering.
-
-  - Calibration is isotonic, fitted via 3-fold CV on the training set.
-    This is what lets us report "60% up" as a calibrated probability
-    rather than an uncalibrated score.
-
-  - No class balancing. Binary up/down is naturally near-balanced
-    (~44/56 at worst in our training data). Balancing adds noise
-    without benefit and was empirically worse in the 3-class variant.
-
-  - Two calibration metrics we care about:
-      * Brier score  — mean squared error of the up-probability.
-                       Lower is better. Baseline (always predict 0.5): 0.25.
-      * Calibration bins — for a well-calibrated model, the actual
-                       up-rate in each probability bin equals the bin's
-                       mean predicted probability.
-
-  - Metrics are computed on whatever data you pass to `evaluate`.
-    During development we use validation; the test set is only touched
-    once, in the final backtest (Chunk H).
-
-  - Artifacts are joblib files: model + metadata in a single dict.
-    Loading a saved forecaster validates the feature list and class
-    order so a mismatch can't silently corrupt predictions.
+Implementation detail
+---------------------
+sklearn's classifiers sort their classes alphabetically. That happens
+to match our direction order ('down' < 'up') but NOT our volatility
+order ('high_vol' < 'low_vol'). To guarantee that `predict_proba`
+returns columns in OUR class order, `fit_forecaster` relabels y values
+to integers using our class_order as the mapping BEFORE fitting. The
+model then sees classes [0, 1] and returns columns in our intended
+order. `FittedForecaster.class_order` stores the string labels for
+callers to interpret predictions.
 """
 from __future__ import annotations
 
@@ -67,12 +49,13 @@ from app.pipeline.features import FEATURE_COLUMNS
 
 log = logging.getLogger(__name__)
 
-# Locked class order for every horizon. Alphabetical: 'down' < 'up'.
 CLASS_ORDER: tuple[str, ...] = ("down", "up")
 N_CLASSES = len(CLASS_ORDER)
 
-# Default model hyperparameters. Deliberately modest — HGB with too
-# many leaves will overfit on 4 years × 50 securities.
+# Fixed-width unicode dtype wide enough for the longest label used by
+# any task. 'high_vol' is 8 chars.
+LABEL_DTYPE = "<U8"
+
 DEFAULT_HGB_PARAMS: dict[str, Any] = {
     "max_iter":           400,
     "learning_rate":      0.05,
@@ -118,45 +101,75 @@ def fit_forecaster(
     horizon: int,
     *,
     hgb_params: dict[str, Any] | None = None,
+    feature_columns: list[str] | None = None,
+    class_order: tuple[str, ...] | None = None,
 ) -> FittedForecaster:
     """
     Fit one calibrated binary forecaster for `horizon`.
 
-    X_train / X_val must have columns exactly matching FEATURE_COLUMNS.
-    y_train / y_val must be string arrays with values in {'up', 'down'}.
+    Parameters
+    ----------
+    feature_columns : list[str] | None
+        Expected feature names. None → FEATURE_COLUMNS.
+    class_order : tuple[str, ...] | None
+        Expected label values in the exact order they should appear in
+        the probability output. None → CLASS_ORDER.
     """
     import sklearn
 
-    # --- validate inputs ---
-    if list(X_train.columns) != list(FEATURE_COLUMNS):
+    expected_columns: list[str] = (
+        list(feature_columns) if feature_columns is not None
+        else list(FEATURE_COLUMNS)
+    )
+    expected_class_order: tuple[str, ...] = (
+        tuple(class_order) if class_order is not None
+        else CLASS_ORDER
+    )
+
+    if len(expected_class_order) != N_CLASSES:
+        raise ValueError(
+            f"class_order must have exactly {N_CLASSES} elements, "
+            f"got {len(expected_class_order)}: {expected_class_order}"
+        )
+
+    if list(X_train.columns) != expected_columns:
         raise ValueError(
             f"X_train columns mismatch: got {list(X_train.columns)}, "
-            f"expected {list(FEATURE_COLUMNS)}"
+            f"expected {expected_columns}"
         )
-    if list(X_val.columns) != list(FEATURE_COLUMNS):
-        raise ValueError("X_val columns mismatch")
+    if list(X_val.columns) != expected_columns:
+        raise ValueError(
+            f"X_val columns mismatch: got {list(X_val.columns)}, "
+            f"expected {expected_columns}"
+        )
     if len(X_train) != len(y_train):
         raise ValueError(f"X_train/y_train length mismatch: {len(X_train)} vs {len(y_train)}")
     if len(X_val) != len(y_val):
         raise ValueError(f"X_val/y_val length mismatch: {len(X_val)} vs {len(y_val)}")
 
-    y_train = np.asarray(y_train, dtype="<U4")
-    y_val   = np.asarray(y_val,   dtype="<U4")
+    y_train_str = np.asarray(y_train, dtype=LABEL_DTYPE)
+    y_val_str   = np.asarray(y_val,   dtype=LABEL_DTYPE)
 
-    unknown_train = set(y_train) - set(CLASS_ORDER)
-    unknown_val   = set(y_val)   - set(CLASS_ORDER)
+    unknown_train = set(y_train_str) - set(expected_class_order)
+    unknown_val   = set(y_val_str)   - set(expected_class_order)
     if unknown_train:
-        raise ValueError(f"y_train has unknown labels: {unknown_train}")
+        raise ValueError(f"y_train has unknown labels: {unknown_train} (expected {expected_class_order})")
     if unknown_val:
-        raise ValueError(f"y_val has unknown labels: {unknown_val}")
+        raise ValueError(f"y_val has unknown labels: {unknown_val} (expected {expected_class_order})")
+
+    # --- relabel to integers using OUR order ---
+    # This is the critical fix: sklearn will then see classes [0, 1] and
+    # `predict_proba` returns column i = probability of class_order[i].
+    label_to_int = {c: i for i, c in enumerate(expected_class_order)}
+    y_train_int = np.array([label_to_int[c] for c in y_train_str], dtype=np.int64)
+    y_val_int   = np.array([label_to_int[c] for c in y_val_str],   dtype=np.int64)
 
     params = dict(DEFAULT_HGB_PARAMS)
     if hgb_params:
         params.update(hgb_params)
 
-    # Log class distribution for the record
-    counts = {c: int((y_train == c).sum()) for c in CLASS_ORDER}
-    log.info("fitting h=%dd | %d train rows, %d features | train class counts: %s",
+    counts = {c: int((y_train_str == c).sum()) for c in expected_class_order}
+    log.info("fitting h=%dd | %d train rows, %d features | class counts: %s",
              horizon, len(X_train), X_train.shape[1], counts)
 
     t0 = time.perf_counter()
@@ -167,20 +180,21 @@ def fit_forecaster(
         method="isotonic",
         cv=3,
     )
-    calibrated.fit(X_train.to_numpy(dtype="float32"), y_train)
+    calibrated.fit(X_train.to_numpy(dtype="float32"), y_train_int)
 
     fitted_classes = list(calibrated.classes_)
-    if fitted_classes != list(CLASS_ORDER):
+    expected_int_classes = list(range(N_CLASSES))
+    if fitted_classes != expected_int_classes:
         raise RuntimeError(
-            f"model class order {fitted_classes} != locked CLASS_ORDER {list(CLASS_ORDER)}"
+            f"model classes {fitted_classes} != expected {expected_int_classes}"
         )
 
     fit_seconds = time.perf_counter() - t0
 
     fc = FittedForecaster(
         horizon=horizon,
-        feature_columns=list(FEATURE_COLUMNS),
-        class_order=list(CLASS_ORDER),
+        feature_columns=expected_columns,
+        class_order=list(expected_class_order),
         model=calibrated,
         trained_at=datetime.now(timezone.utc).isoformat(),
         sklearn_version=sklearn.__version__,
@@ -190,7 +204,9 @@ def fit_forecaster(
         fit_seconds=fit_seconds,
     )
 
-    fc.val_metrics = evaluate(fc, X_val, y_val)
+    # Pass strings to evaluate — it does its own interpretation using
+    # forecaster.class_order.
+    fc.val_metrics = evaluate(fc, X_val, y_val_str)
 
     log.info(
         "  h=%dd fitted in %.1fs | val acc=%.4f  brier=%.4f  auc=%.4f",
@@ -209,8 +225,8 @@ def fit_forecaster(
 
 def predict_proba(forecaster: FittedForecaster, X: pd.DataFrame) -> np.ndarray:
     """
-    Return an (n, 2) array of probabilities in CLASS_ORDER
-    (down, up). Rows sum to 1.
+    Return an (n, 2) array of probabilities. Column i is the probability
+    of forecaster.class_order[i]. Rows sum to 1.
     """
     if list(X.columns) != forecaster.feature_columns:
         raise ValueError(
@@ -222,23 +238,25 @@ def predict_proba(forecaster: FittedForecaster, X: pd.DataFrame) -> np.ndarray:
     return raw
 
 
-def predict_proba_up(forecaster: FittedForecaster, X: pd.DataFrame) -> np.ndarray:
-    """Convenience: return the up-probability column only (n,)."""
-    return predict_proba(forecaster, X)[:, forecaster.class_order.index("up")]
+def predict_proba_positive(forecaster: FittedForecaster, X: pd.DataFrame) -> np.ndarray:
+    """
+    Probability of the second class in forecaster.class_order:
+    'up' for direction, 'high_vol' for volatility.
+    """
+    return predict_proba(forecaster, X)[:, 1]
+
+
+# Backwards-compatible alias (Stage 8A/8B used `predict_proba_up`).
+predict_proba_up = predict_proba_positive
 
 
 def predict_direction(
     forecaster: FittedForecaster,
     X: pd.DataFrame,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Return (directions, confidences).
-    Direction is 'up' if p_up > 0.5, else 'down'.
-    Confidence is max(p_down, p_up).
-    """
     probs = predict_proba(forecaster, X)
     idx = probs.argmax(axis=1)
-    dirs = np.array([forecaster.class_order[i] for i in idx], dtype="<U4")
+    dirs = np.array([forecaster.class_order[i] for i in idx], dtype=LABEL_DTYPE)
     conf = probs.max(axis=1)
     return dirs, conf
 
@@ -248,23 +266,18 @@ def predict_direction(
 # ---------------------------------------------------------------------------
 
 def _calibration_bins(
-    p_up: np.ndarray,
-    y_up: np.ndarray,
+    p_pos: np.ndarray,
+    y_pos: np.ndarray,
     n_bins: int = 10,
 ) -> list[dict]:
-    """
-    Return a list of calibration bins. Each entry:
-      {bin_low, bin_high, n, mean_predicted, actual_up_rate}
-    """
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     out: list[dict] = []
     for i in range(n_bins):
         lo, hi = edges[i], edges[i + 1]
-        # last bin closed on the right
         if i == n_bins - 1:
-            mask = (p_up >= lo) & (p_up <= hi)
+            mask = (p_pos >= lo) & (p_pos <= hi)
         else:
-            mask = (p_up >= lo) & (p_up < hi)
+            mask = (p_pos >= lo) & (p_pos < hi)
         n = int(mask.sum())
         if n == 0:
             out.append({
@@ -272,15 +285,15 @@ def _calibration_bins(
                 "bin_high": round(hi, 2),
                 "n": 0,
                 "mean_predicted": None,
-                "actual_up_rate": None,
+                "actual_positive_rate": None,
             })
         else:
             out.append({
                 "bin_low": round(lo, 2),
                 "bin_high": round(hi, 2),
                 "n": n,
-                "mean_predicted": round(float(p_up[mask].mean()), 4),
-                "actual_up_rate": round(float(y_up[mask].mean()), 4),
+                "mean_predicted": round(float(p_pos[mask].mean()), 4),
+                "actual_positive_rate": round(float(y_pos[mask].mean()), 4),
             })
     return out
 
@@ -291,39 +304,30 @@ def evaluate(
     y_true: np.ndarray,
 ) -> dict[str, Any]:
     """
-    Compute a full metric bundle for a binary forecaster.
-
-    Metrics:
-      accuracy  — fraction of correct argmax predictions
-      brier     — mean((p_up - y_up)^2). Baseline 0.25 (always 0.5).
-      roc_auc   — ranking quality. 0.5 = random, 1.0 = perfect.
-      log_loss  — cross-entropy. Baseline log(2) ≈ 0.693.
-      precision/recall/f1 per class
-      confusion_matrix
-      calibration_bins — 10-bin calibration table
-      pred_freq / true_freq — distribution sanity check
+    The positive class is the second element of forecaster.class_order:
+    'up' for direction, 'high_vol' for volatility.
     """
-    y_true = np.asarray(y_true, dtype="<U4")
+    y_true = np.asarray(y_true, dtype=LABEL_DTYPE)
     probs = predict_proba(forecaster, X)
-    up_idx = forecaster.class_order.index("up")
-    down_idx = forecaster.class_order.index("down")
 
-    p_up = probs[:, up_idx]
-    y_up = (y_true == "up").astype(int)  # 1 if up, 0 if down
+    labels = list(forecaster.class_order)
+    pos_class = labels[1]
+    neg_class = labels[0]
 
-    # Direction = argmax
-    y_pred = np.where(p_up > 0.5, "up", "down").astype("<U4")
+    p_pos = probs[:, 1]
+    y_pos = (y_true == pos_class).astype(int)
+
+    y_pred_idx = probs.argmax(axis=1)
+    y_pred = np.array([labels[i] for i in y_pred_idx], dtype=LABEL_DTYPE)
 
     acc = float(accuracy_score(y_true, y_pred))
-    brier = float(brier_score_loss(y_up, p_up))
+    brier = float(brier_score_loss(y_pos, p_pos))
     try:
-        auc = float(roc_auc_score(y_up, p_up))
+        auc = float(roc_auc_score(y_pos, p_pos))
     except ValueError:
-        # Can happen if a split has only one class
         auc = float("nan")
-    ll = float(log_loss(y_up, np.column_stack([1.0 - p_up, p_up]), labels=[0, 1]))
+    ll = float(log_loss(y_pos, np.column_stack([1.0 - p_pos, p_pos]), labels=[0, 1]))
 
-    labels = list(CLASS_ORDER)
     prec, rec, f1, supp = precision_recall_fscore_support(
         y_true, y_pred, labels=labels, zero_division=0,
     )
@@ -342,23 +346,25 @@ def evaluate(
     for t, p in zip(y_true, y_pred):
         cm[label_to_idx[t], label_to_idx[p]] += 1
 
-    bins = _calibration_bins(p_up, y_up, n_bins=10)
+    bins = _calibration_bins(p_pos, y_pos, n_bins=10)
 
     pred_freq = {c: float((y_pred == c).mean()) for c in labels}
     true_freq = {c: float((y_true == c).mean()) for c in labels}
 
     return {
-        "n":              int(len(y_true)),
-        "accuracy":       acc,
-        "brier":          brier,
-        "roc_auc":        auc,
-        "log_loss":       ll,
-        "per_class":      per_class,
-        "confusion_matrix": cm.tolist(),
-        "class_order":    list(CLASS_ORDER),
-        "calibration_bins": bins,
-        "pred_freq":      pred_freq,
-        "true_freq":      true_freq,
+        "n":                 int(len(y_true)),
+        "positive_class":    pos_class,
+        "negative_class":    neg_class,
+        "accuracy":          acc,
+        "brier":             brier,
+        "roc_auc":           auc,
+        "log_loss":          ll,
+        "per_class":         per_class,
+        "confusion_matrix":  cm.tolist(),
+        "class_order":       list(labels),
+        "calibration_bins":  bins,
+        "pred_freq":         pred_freq,
+        "true_freq":         true_freq,
     }
 
 
@@ -391,18 +397,6 @@ def save_forecaster(forecaster: FittedForecaster, out_dir: Path) -> Path:
 
 def load_forecaster(path: Path) -> FittedForecaster:
     payload = joblib.load(path)
-
-    if payload["feature_columns"] != list(FEATURE_COLUMNS):
-        raise RuntimeError(
-            f"feature mismatch: saved {payload['feature_columns']}, "
-            f"current {list(FEATURE_COLUMNS)}"
-        )
-    if payload["class_order"] != list(CLASS_ORDER):
-        raise RuntimeError(
-            f"class order mismatch: saved {payload['class_order']}, "
-            f"current {list(CLASS_ORDER)}"
-        )
-
     return FittedForecaster(
         horizon=payload["horizon"],
         feature_columns=payload["feature_columns"],
@@ -423,12 +417,19 @@ def write_run_metadata(out_dir: Path, forecasters: dict[int, FittedForecaster]) 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "metadata.json"
 
+    if forecasters:
+        sample = next(iter(forecasters.values()))
+        feature_count = len(sample.feature_columns)
+        class_order   = list(sample.class_order)
+    else:
+        feature_count = 0
+        class_order   = []
+
     meta = {
-        "trained_at":      datetime.now(timezone.utc).isoformat(),
-        "horizons":        sorted(forecasters.keys()),
-        "class_order":     list(CLASS_ORDER),
-        "feature_count":   len(FEATURE_COLUMNS),
-        "feature_columns": list(FEATURE_COLUMNS),
+        "trained_at":    datetime.now(timezone.utc).isoformat(),
+        "horizons":      sorted(forecasters.keys()),
+        "class_order":   class_order,
+        "feature_count": feature_count,
         "models": {
             str(h): {
                 "trained_at":      fc.trained_at,
@@ -452,9 +453,11 @@ def write_run_metadata(out_dir: Path, forecasters: dict[int, FittedForecaster]) 
 __all__ = [
     "CLASS_ORDER",
     "N_CLASSES",
+    "LABEL_DTYPE",
     "FittedForecaster",
     "fit_forecaster",
     "predict_proba",
+    "predict_proba_positive",
     "predict_proba_up",
     "predict_direction",
     "evaluate",
